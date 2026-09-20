@@ -116,6 +116,13 @@ Where the name and the icon disagree, the mapping lives in
 which is why the file is `claude-code.svg`. **Adding an icon whose command name
 differs means adding the alias too**, or nothing will ever look it up.
 
+That file is **strict JSON** — an object of `"command": "icon-name"` and nothing
+else. It has no comments, because JSON has none, so a mapping cannot explain
+itself in place: the table in [`README.md`](README.md) is where the shipped
+entries are documented, and **a mapping you add belongs in that table too**, or
+the next person has no way to know what it is for or whether it is safe to
+delete.
+
 That file is watched, so an added mapping applies on save. A new *icon* needs a
 restart: the index is built once at launch.
 

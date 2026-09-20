@@ -736,10 +736,11 @@ Item {
   //
   // Not in this file: it lives in icon-aliases.json at the plugin root, so it
   // can be edited without touching QML. Two separate reasons a mapping is
-  // needed, and the file explains both -- a shell alias means the title carries
-  // what was TYPED rather than what ran, and a drop-in is named for a desktop
-  // entry's `Icon=` rather than for any command. Everything unlisted resolves by
-  // its own name, which is most of the set.
+  // needed -- a shell alias means the title carries what was TYPED rather than
+  // what ran, and a drop-in is named for a desktop entry's `Icon=` rather than
+  // for any command. Everything unlisted resolves by its own name, which is most
+  // of the set. README.md documents the shipped entries; the file itself is
+  // strict JSON and carries no prose, because JSON has nowhere to put any.
   //
   // Watched, so a saved edit applies without a restart. `text()` is stale inside
   // the change signal itself -- Omarchy's own Color.qml records the same trap --
@@ -762,21 +763,17 @@ Item {
   function _applyIconAliases(text) {
     var raw = String(text || "")
     if (raw.trim().length === 0) { root.iconAliases = ({}); return }
-    // Whole-line // comments only, stripped before parsing. Deliberately not a
-    // general comment stripper: a `//` anywhere else -- inside a value, say --
-    // is left alone, so nothing can be mangled by being quoted oddly.
-    var lines = raw.split("\n")
-    var out = []
-    for (var i = 0; i < lines.length; i++)
-      out.push(lines[i].replace(/^\s+/, "").indexOf("//") === 0 ? "" : lines[i])
     var parsed
     try {
-      parsed = JSON.parse(out.join("\n"))
+      parsed = JSON.parse(raw)
     } catch (e) {
       // Keep whatever was last loaded. A typo mid-edit should not make every
       // processIcon vanish; the file is watched, so the next good save fixes it.
+      // The comment hint is here because this file used to strip `//` lines and
+      // no longer does: JSON has no comments, so that is the likeliest mistake.
       console.warn("window-switcher: icon-aliases.json did not parse (" + e
-        + ") -- keeping the previous mappings")
+        + ") -- keeping the previous mappings. Note it is strict JSON:"
+        + " no comments, no trailing commas.")
       return
     }
     if (!parsed || typeof parsed !== "object" || parsed.constructor === Array) {

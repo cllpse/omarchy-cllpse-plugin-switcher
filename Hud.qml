@@ -2311,6 +2311,10 @@ Item {
         readonly property var edge: card.borderSpec.widths
         readonly property real edgeTop: groupRules.edge ? groupRules.edge.top : 0
         readonly property real edgeBottom: groupRules.edge ? groupRules.edge.bottom : 0
+        // The other two edges, for the overflow scrims below. Same shape and
+        // the same reason: a theme may set the four apart.
+        readonly property real edgeLeft: groupRules.edge ? groupRules.edge.left : 0
+        readonly property real edgeRight: groupRules.edge ? groupRules.edge.right : 0
 
         x: list.x
         y: groupRules.edgeTop
@@ -2515,6 +2519,33 @@ Item {
         // The grab can be taken away -- the surface unmapping under a held
         // button, for one. Nothing in the hand then, and nothing dropped.
         onCanceled: { tiles.dragCandidate = -1; root._dragCancel() }
+
+        // Wheel scrolls the strip sideways when it overflows.
+        //
+        // The list is `interactive: false`, so contentX is ours to move and
+        // nothing below competes for the event. It reaches the surface at all
+        // only because `SUPER + mouse_down` / `mouse_up` are unbound -- stock
+        // Omarchy binds those to "Scroll active workspace forward/backward"
+        // (default/hypr/bindings/tiling.lua:67), and Hyprland resolves a mouse
+        // bind before handing the event to a layer surface, exactly as it does
+        // for the button. With those binds in place the wheel would change
+        // workspace out from under the strip instead of scrolling it.
+        //
+        // A vertical wheel drives the horizontal axis, because a vertical wheel
+        // is the only one most mice have. A real horizontal wheel or a
+        // trackpad's sideways gesture arrives as angleDelta.x and is preferred
+        // when it is non-zero.
+        onWheel: function (wheel) {
+          if (list.contentWidth <= list.width) { wheel.accepted = false; return }
+          var d = wheel.angleDelta.x !== 0 ? wheel.angleDelta.x : wheel.angleDelta.y
+          if (d === 0) { wheel.accepted = false; return }
+          var max = list.originX + list.contentWidth - list.width
+          list.contentX = Math.max(list.originX, Math.min(max, list.contentX - d))
+          wheel.accepted = true
+          // Scrolling is activity: it should hold the strip open the same way
+          // stepping or dragging does.
+          idleTimer.restart()
+        }
       }
 
       // Overflow scrims, same idiom as the SUPER+SPACE menu's scroll scrims
@@ -2524,9 +2555,33 @@ Item {
       // correctly the instant the strip opens already scrolled (e.g.
       // currentIdx landed mid-list) with no animation to catch up.
       Rectangle {
-        x: list.x
-        y: list.y
-        height: list.height
+        // Anchored to the CARD's inner edge, not the list's.
+        //
+        // scrimW already includes the card's padding -- that is what its own
+        // definition is for, "so the fade starts right at the card edge, not
+        // inset from it" -- so starting at list.x counted that padding twice:
+        // the fade began one padding in and ended one padding short, leaving a
+        // bare band of card background between the scrim and the border at each
+        // end, with whatever the ListView clipped stranded in it. Measured at
+        // this card size: card [0..3048], list [22..3026], scrimW 130, so the
+        // right scrim stopped at 3026 and left 22px of flat background.
+        //
+        // INNER edge, though, not the card's outer one. Run it to x: 0 and the
+        // scrim paints over the border and squares off the rounded corner --
+        // the border is not above these, whatever the group rules' comment says
+        // about z 100000. So it stops where the stroke begins, exactly as
+        // groupRules does vertically, and carries the card's own radius so the
+        // corner it now reaches into stays round. Rounding all four corners is
+        // free: the two at the transparent end of the gradient cannot be seen.
+        x: groupRules.edgeLeft
+        radius: Math.max(0, Style.cornerRadius - groupRules.edgeLeft)
+        // The rules run the CARD's height, not the row's, so a scrim sized to
+        // the row leaves the top and bottom of a rule sticking out past the
+        // fade -- a hairline hanging in space at the card edge with nothing
+        // either side of it. Matched to groupRules exactly rather than to the
+        // list, and these draw after it, so a rule under a scrim goes with it.
+        y: groupRules.y
+        height: groupRules.height
         width: card.scrimW
         visible: opacity > 0
         opacity: list.contentWidth > list.width
@@ -2540,9 +2595,10 @@ Item {
       }
 
       Rectangle {
-        x: list.x + list.width - width
-        y: list.y
-        height: list.height
+        x: card.width - groupRules.edgeRight - width
+        radius: Math.max(0, Style.cornerRadius - groupRules.edgeRight)
+        y: groupRules.y
+        height: groupRules.height
         width: card.scrimW
         visible: opacity > 0
         opacity: list.contentWidth > list.width

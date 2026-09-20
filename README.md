@@ -112,6 +112,18 @@ adaptation — the file is the source of truth for its own appearance, and the o
 thing the plugin ever changes about one is its `viewBox`, so that every icon
 fills its box the way Ghostty's does and they all render at the same size.
 
+**Where icons are looked up**, in order — first hit wins:
+
+1. `~/.config/omarchy/cllpse.window-switcher/icons/` — yours.
+2. `~/.icons/cllpse-flat/apps/` — **optional, and almost certainly not on your
+   machine.** It is where [omarchy-cllpse-macos](https://github.com/cllpse/omarchy-cllpse-macos),
+   the configuration this plugin was extracted from, syncs app marks for the
+   Omarchy menu; reading it means that setup shows one mark in both places. If
+   the directory does not exist — the normal case — the plugin simply builds its
+   index without it. Nothing else here reaches outside the plugin.
+3. Your installed icon themes.
+4. [`icons/`](icons) here, last.
+
 **To add your own**, drop an SVG into
 `~/.config/omarchy/cllpse.window-switcher/icons/` — outside the plugin, so an
 update cannot conflict with it — and restart the shell. Name it after the window

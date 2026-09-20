@@ -313,26 +313,22 @@ Item {
   // so on stderr, and the index is simply built without it -- every tile keeps
   // its Nerd Font glyph, which is what a machine with no drop-ins has always
   // done.
-  readonly property string legacyIconDir: Quickshell.env("HOME") + "/.icons/cllpse-flat/apps/"
+  readonly property string dotfilesIconDir: Quickshell.env("HOME") + "/.icons/cllpse-flat/apps/"
 
   // ── Marks the plugin ships itself ───────────────────────────────────────────
   //
-  // A small set of CLI and agent marks under icons/, so the terminal process icons work
-  // on a machine that has done nothing but install this plugin. Resolved LAST,
-  // after the user's own drop-ins and after their installed icon themes, so it
-  // can only ever fill a gap -- it never overrides a mark somebody chose.
+  // 75 app and CLI/agent marks in ONE directory, icons/, so tiles and terminal
+  // process icons both work on a machine that has done nothing but install this
+  // plugin. Resolved LAST, after the user's own drop-ins and after their
+  // installed icon themes, so they can only ever fill a gap -- they never
+  // override a mark somebody chose.
   //
-  // These need NO theme hook, which is the whole reason they can live in a
-  // plugin at all. `icons/flat/` is recoloured at DRAW time by the same
-  // `Color.menu.selectedText` -- live theme roles, so a theme change is picked
-  // up immediately. That is strictly better than the synced path it mirrors:
-  // a theme-set hook bakes a fixed colour into a copy under ~/.icons and needs
-  // the shell restart `omarchy theme set` performs to drop Qt's image cache
-  // before the new colour lands. Nothing here is baked, so nothing goes stale.
-  //
-  // `icons/color/` is drawn verbatim, for marks whose own colours are the point.
-  // The split is by DIRECTORY rather than by guesswork -- see icons/AGENTS.md
-  // for which one a new mark belongs in.
+  // Every one is drawn exactly as authored. There is no flat/colour split and
+  // no recolouring anywhere in this file: an icon is the source of truth for
+  // its own appearance, and the only thing ever changed in a file is its
+  // viewBox, so that all of them fill their box alike. That is also why no
+  // theme hook is needed, and why these can live in a plugin at all -- nothing
+  // is baked per theme, so nothing goes stale. See AGENTS.md before adding one.
   readonly property string pluginRoot: {
     var u = String(Qt.resolvedUrl("."))
     return u.indexOf("file://") === 0 ? u.substring(7) : u
@@ -341,9 +337,8 @@ Item {
 
   Process {
     id: pluginIconScan
-    // One find over both directories rather than an `ls` each: two Processes to
-    // read eleven filenames is two too many, and a missing directory is simply
-    // no output rather than an error.
+    // One find rather than an `ls`, and one Process for the whole directory. A
+    // missing directory is simply no output rather than an error.
     command: ["find", root.pluginRoot + "icons", "-name", "*.svg"]
     stdout: StdioCollector {
       waitForEnd: true
@@ -395,11 +390,10 @@ Item {
     var g = 0xf108 // desktop (generic fallback)
     if (has("ghostty", "alacritty", "kitty", "foot", "wezterm", "xterm", "konsole", "terminal")) g = 0xe795
     else if (has("firefox", "librewolf", "floorp", "zen-browser", "zen_browser", "waterfox")) g = 0xf269
-    // Helium is a Chromium fork and belongs in the family bucket. It used to
-    // carry its own asterisk in the menu, from a hand-placed icons/fallbacks/
-    // helium.png -- dropped along with every other raster when fallbacks/ went
-    // SVG-only (see that directory's README), so both surfaces show this glyph
-    // now. A vector for it can be dropped back in at any time.
+    // Helium is a Chromium fork and belongs in the family bucket. It had a
+    // hand-placed raster once, dropped when the indexes went SVG-only, so it
+    // shows this glyph now. A vector can be dropped in at any time to take it
+    // back over.
     else if (has("chromium", "chrome", "helium", "vivaldi", "brave", "edge", "opera")) g = 0xf268
     else if (has("code", "cursor", "sublime", "jetbrains", "idea", "pycharm", "webstorm", "zed", "vim", "emacs")) g = 0xf121
     else if (has("steam")) g = 0xf1b6
@@ -435,13 +429,16 @@ Item {
 
   // A hand-placed icon for this window's app, if one exists.
   //
-  // Three sources, in order: the user's own directory, whatever their icon
-  // themes carry, and the marks this plugin ships. The first is also where
-  // omarchy-cllpse-macos syncs repainted drop-ins for the Omarchy menu -- which
-  // cannot render a glyph at all and would otherwise show the vendor's colour
-  // logo -- so on that configuration both surfaces show the same mark.
-  // Reusing those files here is what lets the switcher show the same mark the
-  // SUPER+SPACE menu does for an app whose logo no glyph depicts.
+  // Three sources, in order: the drop-in index (the user's own directory, plus
+  // the optional dotfiles one above), whatever their installed icon themes
+  // carry, and the marks this plugin ships. Only the first two can override
+  // anything; ours fill gaps.
+  //
+  // The dotfiles root is why that index has two roots at all: omarchy-cllpse-
+  // macos syncs repainted drop-ins there for the Omarchy menu, which cannot
+  // render a glyph and would otherwise show the vendor's colour logo. Reading
+  // them means that configuration shows one mark in both surfaces. Absent
+  // everywhere else, and absent is fine.
   //
   // Keyed on the window class, because that is all a switcher has, while the
   // dropped file is named for the desktop entry's `Icon=`. Those agree for most
@@ -608,8 +605,8 @@ Item {
     return idx
   }
 
-  // An entry's Icon= run through the same two indexes a class goes through, so
-  // a flat drop-in still overrides the vendor file.
+  // An entry's Icon= run through the same indexes a class goes through, so a
+  // drop-in still outranks the vendor file.
   function _iconFromEntry(hit) {
     if (!hit) return ""
     var name = String(hit.icon || "")
@@ -660,7 +657,7 @@ Item {
   //
   // Once per launch, so a mark added afterwards is not seen until the shell
   // restarts. That is the honest cost of not watching the directory, and it is
-  // stated in icons/AGENTS.md rather than worked around: adding an icon is a
+  // stated in AGENTS.md rather than worked around: adding an icon is a
   // rare, deliberate act, and a watcher on three directories to catch it would
   // be machinery for nothing.
   //
@@ -679,12 +676,11 @@ Item {
   // Font glyph with nothing to say why.
   Process {
     id: iconScan
-    // Both roots in one pass, each file tagged `c` (declares a colour, draw it
-    // verbatim) or `t` (declares none, take the theme's). A missing directory is
-    // an stderr line and nothing else -- the others are still walked, and
-    // StdioCollector only reads stdout -- which is the degradation wanted: a
-    // machine with neither gets an empty index rather than an error.
-    command: ["find", root.userIconRoot, root.legacyIconDir, "-name", "*.svg"]
+    // Both roots in one pass. A missing directory is an stderr line and nothing
+    // else -- the other root is still walked, and StdioCollector only reads
+    // stdout -- which is exactly the degradation wanted: a machine with neither
+    // gets an empty index rather than an error, and every tile keeps its glyph.
+    command: ["find", root.userIconRoot, root.dotfilesIconDir, "-name", "*.svg"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root._applyIconIndex(text)
@@ -701,8 +697,8 @@ Item {
       var f = slash >= 0 ? pth.substring(slash + 1) : pth
       var dot = f.lastIndexOf(".")
       if (dot <= 0) continue
-      // .svg only, deliberately. Rasters were dropped from fallbacks/ so that
-      // one ink convention holds everywhere -- see iconSize in the delegate.
+      // .svg only, deliberately, so one ink convention holds everywhere -- see
+      // iconSize in the delegate.
       // Ignoring a stray .png here means a leftover from an older generation
       // cannot quietly reintroduce the second convention; the app falls back to
       // its glyph until the file is regenerated, which is the honest result.
@@ -804,18 +800,13 @@ Item {
 
   // The icon for whatever is running in this terminal window, or "" for none.
   //
-  // Resolved through the SAME two indexes a window class goes through, in the
-  // same order -- a flat drop-in wins, everything the vendor sweep found
-  // answers otherwise -- so a terminal processIcon and an app tile can never disagree
-  // about what a given program looks like.
+  // Resolved through the SAME indexes a window class goes through, in the same
+  // order, so a terminal process icon and an app tile can never disagree about
+  // what a given program looks like.
   //
-  // In practice the second index is what answers most of these, and it is the
-  // right one to land on. ../icons/color/ is where a mark that only reads in
-  // its OWN colours lives -- the Figma logo, and every CLI and agent mark
-  // beside it. On omarchy-cllpse-macos that set is synced to
-  // ~/.icons/cllpse-color/apps/, which the vendor sweep already covers; here the
-  // same distinction is icons/color/ against icons/flat/. Either way the path
-  // is drawn exactly as the file is, like every other icon here.
+  // Most of these are answered by the vendor sweep or by icons/ here, which is
+  // where the CLI and agent marks live. Drawn exactly as the file is, like
+  // every other icon.
   //
   // No glyph fallback: at processIcon size a Nerd Font glyph is a smudge, and "no icon
   // for this" is better read as no processIcon than as a mark nobody can identify.
@@ -2085,10 +2076,6 @@ Item {
                 // off -- deliberately NOT Image.status, see iconFor() above.
                 readonly property string iconUrl: root.iconFor(modelData.cls)
                 readonly property bool hasIcon: mark.iconUrl.length > 0
-                // Recoloured at draw time, from either flat source: the user's
-                // own repainted drop-ins, or the flat half of what this plugin
-                // ships. Everything else -- vendor artwork, and the plugin's own
-                // icons/color/ -- reaches the screen with its colours intact.
                 readonly property bool isWorkspace: modelData.kind === "workspace"
 
                 // What is running inside this terminal, if anything an icon
@@ -2177,8 +2164,8 @@ Item {
                   id: glyphText
                   anchors.centerIn: parent
                   // Covers a machine with no drop-in directory at all, an empty
-                  // fallbacks/ directory and a name mismatch alike: all three
-                  // leave the class out of the index, so every tile stays a glyph.
+                  // one, and a name mismatch alike: all three leave the class
+                  // out of every index, so the tile stays a glyph.
                   visible: !mark.hasIcon && !mark.isWorkspace
                   text: root.glyphFor(modelData.cls)
                   textFormat: Text.PlainText

@@ -103,8 +103,13 @@ Searched in order; first hit wins.
 
 1. `~/.config/omarchy/cllpse.window-switcher/icons/` — the user's own, outside
    this repository so an `omarchy plugin update` cannot conflict with it.
-2. Their installed icon themes.
-3. `icons/` here, last. A gap-filler, never an override.
+2. `~/.icons/cllpse-flat/apps/` — an **optional integration**, not a
+   dependency: the dotfiles repo this plugin came from syncs marks there for the
+   Omarchy menu. Missing on any other machine, which costs nothing — `find`
+   writes one stderr line and the index is built from what remains. It is the
+   only path in the plugin that points outside itself; do not add another.
+3. Their installed icon themes.
+4. `icons/` here, last. A gap-filler, never an override.
 
 ## Naming, and the alias file
 

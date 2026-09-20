@@ -171,15 +171,4 @@ from a theme's `[spacing]` section if you want them different:
 
 ## License
 
-The plugin itself — `Hud.qml`, the Hyprland snippets, the docs — is MIT; see
-[LICENSE](LICENSE).
-
-**The marks in [`icons/`](icons) are not, and are not mine to relicense.** They
-are hand-sourced reproductions of other projects' icons. Some are product
-trademarks (Figma, Cursor, Ghostty, Slack, Docker, YouTube, Claude and others);
-the rest are generic freedesktop icons carrying their own upstream licenses.
-Shipping a mark to identify the program it belongs to is ordinary nominative
-use, but redistribution is not a right any of those owners grant. If that does
-not suit how you are using this, delete the file — an icon that resolves to
-nothing falls back to your installed themes and then to no icon at all, and
-nothing here is generated, so nothing puts it back.
+MIT — see [LICENSE](LICENSE).

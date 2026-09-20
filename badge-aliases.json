@@ -1,0 +1,42 @@
+// Window Switcher — terminal badge aliases.
+//
+// A terminal tile badges whatever is running in it, looked up by the command
+// name the window title carries. Most commands need nothing here: `btop`,
+// `git`, `docker`, `nvim`, `npm` and the rest are found by their own name.
+//
+// This file is for the two cases where the name and the mark disagree:
+//
+//   1. YOUR SHELL ALIASES IT.  The title carries what you typed. If `diff` runs
+//      `hunk diff`, the title says `diff` and the mark is called `hunk`.
+//      These are examples from one setup — edit them to match your own, or
+//      delete the ones you do not use. If you do NOT alias `diff` to hunk, a
+//      real `diff` run will badge as hunk until you remove that line.
+//
+//   2. THE ICON IS NAMED FOR SOMETHING ELSE.  Icons are named for a desktop
+//      entry's `Icon=` value, not for a command: a Claude session's mark is
+//      `claude-code.svg`, so `claude` has to be mapped to it.
+//
+// Format: a JSON object of "command": "icon-name". Whole-line `//` comments are
+// allowed and stripped before parsing; nothing else about JSON changes.
+//
+// Saved edits apply immediately — the file is watched, no restart needed. If an
+// edit does not parse, the previous mappings stay in force and a warning is
+// logged rather than every badge silently vanishing.
+{
+  "diff": "hunk",
+  "log": "hunk",
+  "dash": "gh",
+  "edit": "msedit",
+  "ls": "lsd",
+
+  "claude": "claude-code",
+  "node": "nodejs",
+  "python3": "python",
+  "sqlite3": "sqlite",
+  "psql": "postgresql",
+  "redis-cli": "redis",
+  "ffprobe": "ffmpeg",
+  "magick": "imagemagick",
+  "convert": "imagemagick",
+  "ytm": "youtube-music"
+}

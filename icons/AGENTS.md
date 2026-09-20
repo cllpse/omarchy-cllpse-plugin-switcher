@@ -68,9 +68,12 @@ already and would be dead weight.
 
 Name the file after the **command**, not the vendor. `badgeFor` looks up what
 the terminal title says, so `gh.svg` is found by running `gh`. Where the two
-differ, the mapping is `badgeAliases` in `Hud.qml` — `claude` → `claude-code`
-lives there, which is why the file is `claude-code.svg`. Adding a mark whose
-command name differs means adding the alias too, or nothing will ever look it up.
+differ, the mapping lives in [`../badge-aliases.json`](../badge-aliases.json) —
+`claude` → `claude-code` is there, which is why the file is `claude-code.svg`.
+**Adding a mark whose command name differs means adding the alias too**, or
+nothing will ever look it up. That file is watched, so an added mapping applies
+on save; a new icon still needs a restart, because the icon index is built once
+at launch.
 
 ## Shape
 

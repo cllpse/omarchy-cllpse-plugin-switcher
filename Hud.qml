@@ -700,34 +700,60 @@ Item {
 
   // Command name -> icon name, for the cases where the two differ.
   //
-  // Two separate reasons they do, and both land here. ../bash/shell.sh aliases
-  // some commands, and the title carries what was TYPED -- `diff`, never
-  // `hunk diff`. And the drop-ins are named for a desktop entry's `Icon=`, not
-  // for anything you would run: the file behind a claude session is
-  // `claude-code.svg`, and no amount of looking up "claude" finds it.
+  // Not in this file: it lives in badge-aliases.json at the plugin root, so it
+  // can be edited without touching QML. Two separate reasons a mapping is
+  // needed, and the file explains both -- a shell alias means the title carries
+  // what was TYPED rather than what ran, and a drop-in is named for a desktop
+  // entry's `Icon=` rather than for any command. Everything unlisted resolves by
+  // its own name, which is most of the set.
   //
-  // Everything not listed resolves by its own name, which is most of the set --
-  // bat, curl, docker, fd, ffmpeg, git, mongosh, npm, nvim, python, ruby,
-  // sqlite, starship, tmux, uv, zoxide and the rest all match directly.
-  readonly property var badgeAliases: ({
-    // Aliased by the shell
-    diff: "hunk",           // shell.sh:150
-    log: "hunk",            // shell.sh:165
-    dash: "gh",             // shell.sh:172, `gh dash`
-    edit: "msedit",         // shell.sh:111
-    ls: "lsd",              // shell.sh:80
-    // Named for `Icon=` rather than for the command
-    claude: "claude-code",
-    node: "nodejs",
-    python3: "python",
-    sqlite3: "sqlite",
-    psql: "postgresql",
-    "redis-cli": "redis",
-    ffprobe: "ffmpeg",
-    magick: "imagemagick",
-    convert: "imagemagick",
-    ytm: "youtube-music"
-  })
+  // Watched, so a saved edit applies without a restart. `text()` is stale inside
+  // the change signal itself -- Omarchy's own Color.qml records the same trap --
+  // so both paths route through reload() -> onLoaded and always parse fresh
+  // content.
+  property var badgeAliases: ({})
+
+  FileView {
+    path: root.pluginRoot + "badge-aliases.json"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root._applyBadgeAliases(text())
+    onFileChanged: reload()
+    // Absent is not the same as unparseable, and they are handled differently
+    // below: a missing file means no aliases at all, which is a real state a
+    // user can choose by deleting it.
+    onLoadFailed: root._applyBadgeAliases("")
+  }
+
+  function _applyBadgeAliases(text) {
+    var raw = String(text || "")
+    if (raw.trim().length === 0) { root.badgeAliases = ({}); return }
+    // Whole-line // comments only, stripped before parsing. Deliberately not a
+    // general comment stripper: a `//` anywhere else -- inside a value, say --
+    // is left alone, so nothing can be mangled by being quoted oddly.
+    var lines = raw.split("\n")
+    var out = []
+    for (var i = 0; i < lines.length; i++)
+      out.push(lines[i].replace(/^\s+/, "").indexOf("//") === 0 ? "" : lines[i])
+    var parsed
+    try {
+      parsed = JSON.parse(out.join("\n"))
+    } catch (e) {
+      // Keep whatever was last loaded. A typo mid-edit should not make every
+      // badge vanish; the file is watched, so the next good save fixes it.
+      console.warn("window-switcher: badge-aliases.json did not parse (" + e
+        + ") -- keeping the previous mappings")
+      return
+    }
+    if (!parsed || typeof parsed !== "object" || parsed.constructor === Array) {
+      console.warn("window-switcher: badge-aliases.json is not an object -- ignored")
+      return
+    }
+    var idx = ({})
+    for (var k in parsed)
+      if (typeof parsed[k] === "string" && parsed[k].length > 0) idx[k] = parsed[k]
+    root.badgeAliases = idx
+  }
 
   // Claude Code announces itself by overwriting the title with
   // "<status marker> <what it is working on>". Measured on this machine across

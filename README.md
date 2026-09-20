@@ -113,10 +113,12 @@ recoloured at draw time from live theme roles, so a theme change is picked up
 immediately. `icons/color/` is drawn verbatim, for marks whose own colours are
 the point.
 
-**The alias table is opinionated.** A command is looked up by its own name, so
-`btop`, `git`, `docker`, `nvim`, `npm` and most others need nothing. A handful
-are mapped in `badgeFor`'s `badgeAliases` in `Hud.qml`, and some of those encode
-*one particular* shell's aliases:
+**The alias table is opinionated, and it is yours to edit.** It lives in
+[`badge-aliases.json`](badge-aliases.json) at the root of this repository, not
+in the QML. A command is looked up by its own name, so `btop`, `git`, `docker`,
+`nvim`, `npm` and most others need nothing. What the file is for is the two
+cases where the name and the mark disagree — and some of the shipped entries
+encode *one particular* shell's aliases:
 
 | title | resolves to | why |
 |---|---|---|
@@ -126,8 +128,15 @@ are mapped in `badgeFor`'s `badgeAliases` in `Hud.qml`, and some of those encode
 | `claude` | `claude-code` | icons are named for a desktop entry's `Icon=`, not for the command |
 | `node`, `psql`, `python3`, `sqlite3`, `ytm` | `nodejs`, `postgresql`, `python`, `sqlite`, `youtube-music` | same |
 
-If you do not alias `diff` to `hunk`, a real `diff` run gets a hunk badge. Edit
-`badgeAliases` to suit your shell — it is one object near the top of `Hud.qml`.
+If you do not alias `diff` to `hunk`, a real `diff` run gets a hunk badge —
+delete that line. The file takes whole-line `//` comments, and **saved edits
+apply immediately**: it is watched, so no restart is needed. An edit that does
+not parse leaves the previous mappings in force and logs a warning rather than
+silently dropping every badge.
+
+One caveat, since the file is tracked: `omarchy plugin update` pulls this
+repository, so local edits can conflict. `git checkout badge-aliases.json`
+inside the plugin directory takes the shipped version back if that happens.
 
 ## Theming
 

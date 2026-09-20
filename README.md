@@ -16,8 +16,8 @@ one onto another workspace to move it there.
 - **Drag a tile onto a workspace group** to move that window there, landing at
   whichever boundary you drop on — before its first window, after its last, or
   between any two. Dropping on a tile's own group re-arranges it in place.
-- **Terminal tiles badge what is running in them** — a Claude session, a diff
-  viewer, `btop` — as a small mark over the terminal's own icon.
+- **A terminal tile shows what is running in it** — a Claude session, a diff
+  viewer, `btop` — as a small icon over the terminal's own.
 
 ## Requirements
 
@@ -92,36 +92,36 @@ mixing horizontal and vertical splits has no ordering a single strip of tiles
 could point at, and none is invented — the move simply stops when the layout
 declines it.
 
-## Terminal badges
+## Terminal icons
 
-A terminal tile carries a second mark for what is running inside it. The window
+A terminal tile carries a second icon for what is running inside it. The window
 **title** is the only per-window signal available: a terminal running as a
 single process reports the same pid for every one of its windows, so nothing
 compositor-side can say which process belongs to which window. Shell integration
 sets the title to the command as typed, which is the better signal anyway.
 
-Marks are resolved by name against your installed icon themes, and the plugin
-ships a small set of its own ([`icons/`](AGENTS.md) — the agent CLIs and a
-few dev tools that no icon theme carries) so the feature does something out of
-the box. Those resolve **last**, after your own drop-ins and after every
-installed theme, so they only ever fill a gap. A program with no icon anywhere
-simply gets no badge. Claude Code is recognised by the status marker it writes
-into the title.
+Icons are resolved by name against your installed icon themes, and the plugin
+ships a small set of its own ([`icons/`](icons) — the agent CLIs and a few dev
+tools that no icon theme carries) so the feature does something out of the box.
+Those resolve **last**, after your own and after every installed theme, so they
+only ever fill a gap. A program with no icon anywhere simply gets none. Claude
+Code is recognised by the status marker it writes into the title.
 
-The shipped marks need no theme hook and no sync step: `icons/flat/` is
-recoloured at draw time from live theme roles, so a theme change is picked up
-immediately. `icons/color/` is drawn verbatim, for marks whose own colours are
-the point.
+The shipped icons need no theme hook and no sync step, and there is only one
+directory. **The file decides how it is drawn**: an SVG that declares no colour
+of its own is a silhouette and is recoloured to the theme at draw time, live; one
+that declares a colour means it and is drawn verbatim. `grep fill= <file>` tells
+you which you have.
 
 **To add your own**, drop an SVG into
-`~/.config/omarchy/cllpse.window-switcher/icons/flat/` (recoloured) or
-`.../color/` (verbatim) — outside the plugin, so an update cannot conflict with
-it — and restart the shell. Name it after the command; if the two differ, add a
-line to [`badge-aliases.json`](badge-aliases.json).
-[`AGENTS.md`](AGENTS.md) has the details.
+`~/.config/omarchy/cllpse.window-switcher/icons/` — outside the plugin, so an
+update cannot conflict with it — and restart the shell. Name it after the
+command; if the two differ, add a line to
+[`icon-aliases.json`](icon-aliases.json). [`AGENTS.md`](AGENTS.md) has the
+details.
 
 **The alias table is opinionated, and it is yours to edit.** It lives in
-[`badge-aliases.json`](badge-aliases.json) at the root of this repository, not
+[`icon-aliases.json`](icon-aliases.json) at the root of this repository, not
 in the QML. A command is looked up by its own name, so `btop`, `git`, `docker`,
 `nvim`, `npm` and most others need nothing. What the file is for is the two
 cases where the name and the mark disagree — and some of the shipped entries
@@ -135,14 +135,14 @@ encode *one particular* shell's aliases:
 | `claude` | `claude-code` | icons are named for a desktop entry's `Icon=`, not for the command |
 | `node`, `psql`, `python3`, `sqlite3`, `ytm` | `nodejs`, `postgresql`, `python`, `sqlite`, `youtube-music` | same |
 
-If you do not alias `diff` to `hunk`, a real `diff` run gets a hunk badge —
+If you do not alias `diff` to `hunk`, a real `diff` run gets a hunk icon —
 delete that line. The file takes whole-line `//` comments, and **saved edits
 apply immediately**: it is watched, so no restart is needed. An edit that does
 not parse leaves the previous mappings in force and logs a warning rather than
-silently dropping every badge.
+silently dropping every icon.
 
 One caveat, since the file is tracked: `omarchy plugin update` pulls this
-repository, so local edits can conflict. `git checkout badge-aliases.json`
+repository, so local edits can conflict. `git checkout icon-aliases.json`
 inside the plugin directory takes the shipped version back if that happens.
 
 ## Theming

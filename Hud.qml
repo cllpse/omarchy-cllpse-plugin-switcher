@@ -301,39 +301,35 @@ Item {
     root.dismiss()
   }
 
-  // Where a USER drops marks of their own. Owned by this plugin, outside the
-  // repository, so an `omarchy plugin update` cannot conflict with it and
-  // nothing else has to be installed for it to work:
-  //
-  //   ~/.config/omarchy/cllpse.window-switcher/icons/flat/   recoloured to theme
-  //   ~/.config/omarchy/cllpse.window-switcher/icons/color/  drawn verbatim
-  //
-  // Same split, and the same meaning, as the plugin's own icons/ -- see
-  // icons/AGENTS.md.
+  // Where a USER drops icons of their own: one directory, outside this
+  // repository, so an `omarchy plugin update` cannot conflict with what they put
+  // there.
   readonly property string userIconRoot:
     Quickshell.env("HOME") + "/.config/omarchy/cllpse.window-switcher/icons/"
 
   // An optional integration, NOT a dependency. omarchy-cllpse-macos, the
   // configuration this plugin was extracted from, syncs repainted drop-ins here
-  // for the Omarchy menu, and reading them means its users get the same marks in
+  // for the Omarchy menu, and reading them means its users get the same icon in
   // both places. On any other machine the directory does not exist, `find` says
   // so on stderr, and the index is simply built without it -- every tile keeps
   // its Nerd Font glyph, which is what a machine with no drop-ins has always
   // done.
-  readonly property string flatIconDir: Quickshell.env("HOME") + "/.icons/cllpse-flat/apps/"
+  readonly property string legacyIconDir: Quickshell.env("HOME") + "/.icons/cllpse-flat/apps/"
 
-  // One test, three flat sources, so "is this recoloured at draw time" cannot
-  // mean different things in the three places that ask.
-  function _isFlatUrl(u) {
-    var s = String(u || "")
-    return s.indexOf("file://" + root.userIconRoot + "flat/") === 0
-      || s.indexOf("file://" + root.flatIconDir) === 0
-      || s.indexOf("file://" + root.pluginFlatDir) === 0
-  }
+  // Which icons are recoloured to the theme, keyed by url.
+  //
+  // There is no flat/ and color/ split any more: one directory, and the FILE
+  // says which it is. An SVG that declares no colour of its own renders black,
+  // which is invisible on a dark card, so it is a silhouette and takes the
+  // theme's colour; one that declares a colour means it, and is drawn verbatim.
+  // The rule is inspectable with `grep fill= <file>`, needs no naming
+  // convention, and cannot be got wrong by filing something in the wrong place.
+  property var themedIcons: ({})
 
+  function _isThemedUrl(u) { return root.themedIcons[String(u || "")] === true }
   // ── Marks the plugin ships itself ───────────────────────────────────────────
   //
-  // A small set of CLI and agent marks under icons/, so the terminal badges work
+  // A small set of CLI and agent marks under icons/, so the terminal process icons work
   // on a machine that has done nothing but install this plugin. Resolved LAST,
   // after the user's own drop-ins and after their installed icon themes, so it
   // can only ever fill a gap -- it never overrides a mark somebody chose.
@@ -354,7 +350,6 @@ Item {
     var u = String(Qt.resolvedUrl("."))
     return u.indexOf("file://") === 0 ? u.substring(7) : u
   }
-  readonly property string pluginFlatDir: root.pluginRoot + "icons/flat/"
   property var pluginIconIndex: ({})
 
   Process {
@@ -362,7 +357,11 @@ Item {
     // One find over both directories rather than an `ls` each: two Processes to
     // read eleven filenames is two too many, and a missing directory is simply
     // no output rather than an error.
-    command: ["find", root.pluginRoot + "icons", "-name", "*.svg"]
+    command: ["bash", "-c",
+      "find " + root.pluginRoot + "icons -name '*.svg' 2>/dev/null"
+      + " | while IFS= read -r f; do"
+      + " if grep -qE '(fill|stroke)[=:][^;>]*(#|white|black|rgb)' \"$f\";"
+      + " then echo \"c $f\"; else echo \"t $f\"; fi; done"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root._applyPluginIconIndex(text)
@@ -371,17 +370,24 @@ Item {
 
   function _applyPluginIconIndex(text) {
     var idx = {}
+    var themed = ({})
     var lines = String(text || "").split("\n")
     for (var i = 0; i < lines.length; i++) {
-      var pth = lines[i].trim()
+      var line = lines[i]
+      if (line.length < 3) continue
+      var tag = line.charAt(0)
+      var pth = line.substring(2).trim()
       if (pth.length === 0) continue
       var slash = pth.lastIndexOf("/")
       var file = slash >= 0 ? pth.substring(slash + 1) : pth
       var dot = file.lastIndexOf(".")
       if (dot <= 0) continue
       var name = file.substring(0, dot)
-      if (idx[name] === undefined) idx[name] = "file://" + pth
+      if (idx[name] !== undefined) continue
+      idx[name] = "file://" + pth
+      if (tag === "t") themed["file://" + pth] = true
     }
+    root.themedIcons = Object.assign({}, root.themedIcons, themed)
     root.pluginIconIndex = idx
   }
 
@@ -696,11 +702,16 @@ Item {
   // Font glyph with nothing to say why.
   Process {
     id: iconScan
-    // Both roots in one find. A missing directory is an stderr line and
-    // nothing else -- the others are still walked, and StdioCollector only
-    // reads stdout -- which is exactly the degradation wanted: a machine with
-    // neither directory gets an empty index rather than an error.
-    command: ["find", root.userIconRoot, root.flatIconDir, "-name", "*.svg"]
+    // Both roots in one pass, each file tagged `c` (declares a colour, draw it
+    // verbatim) or `t` (declares none, take the theme's). A missing directory is
+    // an stderr line and nothing else -- the others are still walked, and
+    // StdioCollector only reads stdout -- which is the degradation wanted: a
+    // machine with neither gets an empty index rather than an error.
+    command: ["bash", "-c",
+      "find " + root.userIconRoot + " " + root.legacyIconDir + " -name '*.svg' 2>/dev/null"
+      + " | while IFS= read -r f; do"
+      + " if grep -qE '(fill|stroke)[=:][^;>]*(#|white|black|rgb)' \"$f\";"
+      + " then echo \"c $f\"; else echo \"t $f\"; fi; done"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root._applyIconIndex(text)
@@ -709,9 +720,13 @@ Item {
 
   function _applyIconIndex(text) {
     var idx = {}
+    var themed = ({})
     var lines = String(text || "").split("\n")
     for (var i = 0; i < lines.length; i++) {
-      var pth = lines[i].trim()
+      var line = lines[i]
+      if (line.length < 3) continue
+      var tag = line.charAt(0)
+      var pth = line.substring(2).trim()
       if (pth.length === 0) continue
       var slash = pth.lastIndexOf("/")
       var f = slash >= 0 ? pth.substring(slash + 1) : pth
@@ -726,8 +741,11 @@ Item {
       // First hit wins, and the user's own root is walked first, so a mark they
       // placed outranks anything synced in beside it.
       var name = f.substring(0, dot)
-      if (idx[name] === undefined) idx[name] = "file://" + pth
+      if (idx[name] !== undefined) continue
+      idx[name] = "file://" + pth
+      if (tag === "t") themed["file://" + pth] = true
     }
+    root.themedIcons = Object.assign({}, root.themedIcons, themed)
     root.iconIndex = idx
   }
 
@@ -744,12 +762,12 @@ Item {
   // integration sets it to the command AS TYPED, so an alias arrives as itself
   // -- `diff`, not `hunk diff` -- an idle shell shows its cwd, and Claude Code
   // overwrites it with its own status line. windowtitle/windowtitlev2 are
-  // already in refreshEvents, so a badge follows the foreground command live
+  // already in refreshEvents, so a processIcon follows the foreground command live
   // with no new machinery at all.
 
   // Command name -> icon name, for the cases where the two differ.
   //
-  // Not in this file: it lives in badge-aliases.json at the plugin root, so it
+  // Not in this file: it lives in icon-aliases.json at the plugin root, so it
   // can be edited without touching QML. Two separate reasons a mapping is
   // needed, and the file explains both -- a shell alias means the title carries
   // what was TYPED rather than what ran, and a drop-in is named for a desktop
@@ -760,23 +778,23 @@ Item {
   // the change signal itself -- Omarchy's own Color.qml records the same trap --
   // so both paths route through reload() -> onLoaded and always parse fresh
   // content.
-  property var badgeAliases: ({})
+  property var iconAliases: ({})
 
   FileView {
-    path: root.pluginRoot + "badge-aliases.json"
+    path: root.pluginRoot + "icon-aliases.json"
     watchChanges: true
     printErrors: false
-    onLoaded: root._applyBadgeAliases(text())
+    onLoaded: root._applyIconAliases(text())
     onFileChanged: reload()
     // Absent is not the same as unparseable, and they are handled differently
     // below: a missing file means no aliases at all, which is a real state a
     // user can choose by deleting it.
-    onLoadFailed: root._applyBadgeAliases("")
+    onLoadFailed: root._applyIconAliases("")
   }
 
-  function _applyBadgeAliases(text) {
+  function _applyIconAliases(text) {
     var raw = String(text || "")
-    if (raw.trim().length === 0) { root.badgeAliases = ({}); return }
+    if (raw.trim().length === 0) { root.iconAliases = ({}); return }
     // Whole-line // comments only, stripped before parsing. Deliberately not a
     // general comment stripper: a `//` anywhere else -- inside a value, say --
     // is left alone, so nothing can be mangled by being quoted oddly.
@@ -789,19 +807,19 @@ Item {
       parsed = JSON.parse(out.join("\n"))
     } catch (e) {
       // Keep whatever was last loaded. A typo mid-edit should not make every
-      // badge vanish; the file is watched, so the next good save fixes it.
-      console.warn("window-switcher: badge-aliases.json did not parse (" + e
+      // processIcon vanish; the file is watched, so the next good save fixes it.
+      console.warn("window-switcher: icon-aliases.json did not parse (" + e
         + ") -- keeping the previous mappings")
       return
     }
     if (!parsed || typeof parsed !== "object" || parsed.constructor === Array) {
-      console.warn("window-switcher: badge-aliases.json is not an object -- ignored")
+      console.warn("window-switcher: icon-aliases.json is not an object -- ignored")
       return
     }
     var idx = ({})
     for (var k in parsed)
       if (typeof parsed[k] === "string" && parsed[k].length > 0) idx[k] = parsed[k]
-    root.badgeAliases = idx
+    root.iconAliases = idx
   }
 
   // Claude Code announces itself by overwriting the title with
@@ -824,7 +842,7 @@ Item {
   //
   // Resolved through the SAME two indexes a window class goes through, in the
   // same order -- a flat drop-in wins, everything the vendor sweep found
-  // answers otherwise -- so a terminal badge and an app tile can never disagree
+  // answers otherwise -- so a terminal processIcon and an app tile can never disagree
   // about what a given program looks like.
   //
   // In practice the second index is what answers most of these, and it is the
@@ -833,12 +851,12 @@ Item {
   // beside it. On omarchy-cllpse-macos that set is synced to
   // ~/.icons/cllpse-color/apps/, which the vendor sweep already covers; here the
   // same distinction is icons/color/ against icons/flat/. Either way the path
-  // is not one _isFlatUrl recognises, so badgeIsFlat is false and the badge is
+  // is not one _isFlatUrl recognises, so processIconIsThemed is false and the processIcon is
   // drawn verbatim rather than repainted, which is the whole point.
   //
-  // No glyph fallback: at badge size a Nerd Font glyph is a smudge, and "no icon
-  // for this" is better read as no badge than as a mark nobody can identify.
-  function badgeFor(cls, title) {
+  // No glyph fallback: at processIcon size a Nerd Font glyph is a smudge, and "no icon
+  // for this" is better read as no processIcon than as a mark nobody can identify.
+  function processIconFor(cls, title) {
     if (!root._isTerminal(cls)) return ""
     var t = String(title || "").trim()
     if (t.length === 0) return ""
@@ -853,7 +871,7 @@ Item {
       // A marker this does not know yet, in the shape Claude Code uses. Loose
       // on purpose and the one guess in here: nothing else on this machine
       // titles itself with a leading symbol and a space. If something starts,
-      // it will wear the wrong badge and this is the line to tighten.
+      // it will wear the wrong processIcon and this is the line to tighten.
       name = "claude"
     } else {
       name = t.split(/\s+/)[0].toLowerCase()
@@ -867,8 +885,8 @@ Item {
     // last one to begin with, which meant a claude session -- recognised by its
     // marker and never by a command name -- skipped the table entirely and went
     // looking for "claude". The file is claude-code.svg, so it found nothing
-    // and the tile drew no badge while every other program badged correctly.
-    var aliased = root.badgeAliases[name]
+    // and the tile drew no processIcon while every other program carrying a process icon correctly.
+    var aliased = root.iconAliases[name]
     if (aliased !== undefined) name = aliased
 
     var flat = root.iconIndex[name]
@@ -1883,23 +1901,23 @@ Item {
       // xs and the title tops the rest up with topPadding. Step this along
       // Style.spacing (xs 3 / sm 4 / md 6 / lg 8 / xl 10) to retune; rowH and
       // the padding both derive from it, so there is one place to change.
-      // The running-program badge, as two knobs on the same ladder
+      // The running-program processIcon, as two knobs on the same ladder
       // (xxs 2 / xs 3 / sm 4 / md 6 / lg 8 / xl 10).
       //
       // Its size is stated as how much SMALLER than the icon it sits on it is,
       // rather than as a fraction of it, so that stepping it means the same
       // thing as stepping anything else here -- a bigger inset is a smaller
-      // badge. It was a 3/4 ratio, which had no step to take.
+      // processIcon. It was a 3/4 ratio, which had no step to take.
       //
       // The two move together. What is actually being tuned is neither number
       // but the sliver of terminal icon left showing at the top left, which is
-      // `badgeInset + badgeOffset` wide -- 8px here. Raise the offset with the
+      // `processIconInset + processIconOffset` wide -- 8px here. Raise the offset with the
       // size and that sliver holds; raise it alone and more of the terminal
-      // shows; lower it alone and the badge swallows the icon, which is what
+      // shows; lower it alone and the processIcon swallows the icon, which is what
       // full size did.
-      readonly property int badgeInset: Style.spacing.xxs
-      readonly property int badgeSize: Math.max(1, card.iconDrawn - card.badgeInset)
-      readonly property int badgeOffset: Style.spacing.md
+      readonly property int processIconInset: Style.spacing.xxs
+      readonly property int processIconSize: Math.max(1, card.iconDrawn - card.processIconInset)
+      readonly property int processIconOffset: Style.spacing.md
       readonly property int iconTitleGap: Style.spacing.lg
       readonly property int iconTitleTopUp: Math.max(0, card.iconTitleGap - Style.spacing.xs)
 
@@ -2121,14 +2139,14 @@ Item {
 
                 // What is running inside this terminal, if anything an icon
                 // index can name. Cached exactly as iconUrl is, and for exactly
-                // the same reason: the badge owns an item tree, and item
+                // the same reason: the processIcon owns an item tree, and item
                 // structure keyed on Image.status is what aborted the shell
                 // four times -- see iconFor() above. This comes from the index
                 // and cannot move while Qt walks the tree.
-                readonly property string badgeUrl:
-                  root.badgeFor(modelData.cls, modelData.title)
-                readonly property bool hasBadge: mark.badgeUrl.length > 0
-                readonly property bool badgeIsFlat: mark.hasBadge && root._isFlatUrl(mark.badgeUrl)
+                readonly property string processIconUrl:
+                  root.processIconFor(modelData.cls, modelData.title)
+                readonly property bool hasProcessIcon: mark.processIconUrl.length > 0
+                readonly property bool processIconIsThemed: mark.hasProcessIcon && root._isFlatUrl(mark.processIconUrl)
 
                 // Match the INK, not the canvas -- but only where there IS
                 // canvas, which is the half of this that was wrong.
@@ -2259,9 +2277,9 @@ Item {
                 //
                 // pixelSize is iconSize, the same as the app glyph below, so it
                 // lands on the shared ink ratio with no extra arithmetic.
-                // The badge: the running program's mark, a shade under the
+                // The processIcon: the running program's mark, a shade under the
                 // size of the terminal's own and hanging past its bottom-right
-                // corner. Both numbers are card.badge* knobs -- see there.
+                // corner. Both numbers are card.processIcon* knobs -- see there.
                 //
                 // Full size was tried and read as a replacement rather than an
                 // overlay: at the same size, no offset small enough to look
@@ -2271,7 +2289,7 @@ Item {
                 // dominant -- it is the thing you are looking for -- while the
                 // whole top-left of the terminal's mark stays clear.
                 //
-                // Behind a Loader so a tile that has no badge -- every app
+                // Behind a Loader so a tile that has no processIcon -- every app
                 // window, every idle shell -- pays for no Image and no effect
                 // at all. `active` keys off the cached bool above, never off a
                 // load status.
@@ -2279,21 +2297,21 @@ Item {
                 // Positioned against the DRAWN icon box rather than against
                 // `mark`, whose height is the glyph's line height and so taller
                 // than the art it contains. Anchoring to the item would float
-                // the badge below the corner it is meant to sit in.
+                // the processIcon below the corner it is meant to sit in.
                 Loader {
-                  id: badge
-                  active: mark.hasBadge
-                  width: card.badgeSize
-                  height: badge.width
+                  id: processIcon
+                  active: mark.hasProcessIcon
+                  width: card.processIconSize
+                  height: processIcon.width
                   // The icon box's bottom-right corner, then one step past it.
                   // The box is centred in `mark`, whose height is the glyph's
                   // line height rather than the art's -- hence the arithmetic
                   // instead of an anchor.
-                  x: (mark.width + card.iconDrawn) / 2 - badge.width + card.badgeOffset
-                  y: (mark.height + card.iconDrawn) / 2 - badge.height + card.badgeOffset
+                  x: (mark.width + card.iconDrawn) / 2 - processIcon.width + card.processIconOffset
+                  y: (mark.height + card.iconDrawn) / 2 - processIcon.height + card.processIconOffset
 
                   sourceComponent: Item {
-                    // No separation layer behind the badge, deliberately.
+                    // No separation layer behind the processIcon, deliberately.
                     //
                     // Two have been tried here and both were worse than
                     // nothing. A filled rounded rect in the tile's background
@@ -2310,21 +2328,21 @@ Item {
                     // contrast. It read cleanly on solid marks like btop's,
                     // which is exactly why it survived a first look.
                     //
-                    // The badge hangs mostly outside the icon at the current
+                    // The processIcon hangs mostly outside the icon at the current
                     // offset, so it needs less separation than either attempt
                     // assumed. If a mark ever does need it, fit it to that
                     // mark; do not reintroduce a global one.
                     //
-                    // One MultiEffect still serves both kinds of badge. That
+                    // One MultiEffect still serves both kinds of processIcon. That
                     // arrived with the shadow but is worth keeping on its own:
                     // colorization is switched off for a vendor mark so its own
                     // colours reach the screen, and on for a flat drop-in.
                     Image {
-                      id: badgeImage
+                      id: processIconImage
                       anchors.fill: parent
-                      source: mark.badgeUrl
-                      sourceSize.width: Math.ceil(badge.width * Screen.devicePixelRatio)
-                      sourceSize.height: Math.ceil(badge.width * Screen.devicePixelRatio)
+                      source: mark.processIconUrl
+                      sourceSize.width: Math.ceil(processIcon.width * Screen.devicePixelRatio)
+                      sourceSize.height: Math.ceil(processIcon.width * Screen.devicePixelRatio)
                       fillMode: Image.PreserveAspectFit
                       asynchronous: true
                       // Sampled as a texture, never drawn directly. Same shape
@@ -2335,9 +2353,9 @@ Item {
                     }
 
                     MultiEffect {
-                      anchors.fill: badgeImage
-                      source: badgeImage
-                      colorization: mark.badgeIsFlat ? 1.0 : 0.0
+                      anchors.fill: processIconImage
+                      source: processIconImage
+                      colorization: mark.processIconIsThemed ? 1.0 : 0.0
                       colorizationColor: cell.sel ? Color.menu.selectedText
                                                   : Color.menu.text
                     }
@@ -2385,7 +2403,7 @@ Item {
               }
               // Detail line: just the title. The workspace is carried by the
               // gap in the strip, not by anything in here -- see card.groupGap.
-              // A "1 - " prefix and, briefly, a filled number badge both lived
+              // A "1 - " prefix and, briefly, a filled number processIcon both lived
               // here first; each spent horizontal room in a 150px tile to repeat
               // what adjacency already says.
               Text {

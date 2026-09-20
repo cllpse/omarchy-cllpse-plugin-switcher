@@ -100,9 +100,18 @@ single process reports the same pid for every one of its windows, so nothing
 compositor-side can say which process belongs to which window. Shell integration
 sets the title to the command as typed, which is the better signal anyway.
 
-Marks are resolved by name against your installed icon themes, so a program with
-no icon simply gets no badge. Claude Code is recognised by the status marker it
-writes into the title.
+Marks are resolved by name against your installed icon themes, and the plugin
+ships a small set of its own ([`icons/`](icons/AGENTS.md) — the agent CLIs and a
+few dev tools that no icon theme carries) so the feature does something out of
+the box. Those resolve **last**, after your own drop-ins and after every
+installed theme, so they only ever fill a gap. A program with no icon anywhere
+simply gets no badge. Claude Code is recognised by the status marker it writes
+into the title.
+
+The shipped marks need no theme hook and no sync step: `icons/flat/` is
+recoloured at draw time from live theme roles, so a theme change is picked up
+immediately. `icons/color/` is drawn verbatim, for marks whose own colours are
+the point.
 
 **The alias table is opinionated.** A command is looked up by its own name, so
 `btop`, `git`, `docker`, `nvim`, `npm` and most others need nothing. A handful

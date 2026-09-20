@@ -303,6 +303,60 @@ Item {
 
   readonly property string flatIconDir: Quickshell.env("HOME") + "/.icons/cllpse-flat/apps/"
 
+  // ── Marks the plugin ships itself ───────────────────────────────────────────
+  //
+  // A small set of CLI and agent marks under icons/, so the terminal badges work
+  // on a machine that has done nothing but install this plugin. Resolved LAST,
+  // after the user's own drop-ins and after their installed icon themes, so it
+  // can only ever fill a gap -- it never overrides a mark somebody chose.
+  //
+  // These need NO theme hook, which is the whole reason they can live in a
+  // plugin at all. `icons/flat/` is recoloured at DRAW time by the same
+  // MultiEffect the tiles already use, from `Color.menu.text` /
+  // `Color.menu.selectedText` -- live theme roles, so a theme change is picked
+  // up immediately. That is strictly better than the synced path it mirrors:
+  // a theme-set hook bakes a fixed colour into a copy under ~/.icons and needs
+  // the shell restart `omarchy theme set` performs to drop Qt's image cache
+  // before the new colour lands. Nothing here is baked, so nothing goes stale.
+  //
+  // `icons/color/` is drawn verbatim, for marks whose own colours are the point.
+  // The split is by DIRECTORY rather than by guesswork -- see icons/AGENTS.md
+  // for which one a new mark belongs in.
+  readonly property string pluginRoot: {
+    var u = String(Qt.resolvedUrl("."))
+    return u.indexOf("file://") === 0 ? u.substring(7) : u
+  }
+  readonly property string pluginFlatDir: root.pluginRoot + "icons/flat/"
+  property var pluginIconIndex: ({})
+
+  Process {
+    id: pluginIconScan
+    // One find over both directories rather than an `ls` each: two Processes to
+    // read eleven filenames is two too many, and a missing directory is simply
+    // no output rather than an error.
+    command: ["find", root.pluginRoot + "icons", "-name", "*.svg"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root._applyPluginIconIndex(text)
+    }
+  }
+
+  function _applyPluginIconIndex(text) {
+    var idx = {}
+    var lines = String(text || "").split("\n")
+    for (var i = 0; i < lines.length; i++) {
+      var pth = lines[i].trim()
+      if (pth.length === 0) continue
+      var slash = pth.lastIndexOf("/")
+      var file = slash >= 0 ? pth.substring(slash + 1) : pth
+      var dot = file.lastIndexOf(".")
+      if (dot <= 0) continue
+      var name = file.substring(0, dot)
+      if (idx[name] === undefined) idx[name] = "file://" + pth
+    }
+    root.pluginIconIndex = idx
+  }
+
   // Nerd Font codepoints, built from hex so the Private-Use-Area glyphs survive
   // any editor. These render in Style.font.menuFamily -- SFProText Nerd Font
   // Propo on this machine, via OMARCHY_MENU_FONT -- so every codepoint here is
@@ -550,7 +604,9 @@ Item {
     var flat = root.iconIndex[name]
     if (flat !== undefined) return flat
     var v = root.vendorIndex[name]
-    return v === undefined ? "" : v
+    if (v !== undefined) return v
+    var own = root.pluginIconIndex[name]
+    return own === undefined ? "" : own
   }
 
   function _webAppEntry(cls) {
@@ -578,7 +634,10 @@ Item {
     w = root._iconFromEntry(root._webAppEntry(c))
     if (w.length > 0) return w
     var v = root.vendorIndex[c]
-    return v === undefined ? "" : v
+    if (v !== undefined) return v
+    // Last: what this plugin ships. A gap-filler, never an override.
+    var own = root.pluginIconIndex[c]
+    return own === undefined ? "" : own
   }
 
   // `ls` directly rather than through a shell: Process runs the argv as given,
@@ -739,7 +798,9 @@ Item {
     var flat = root.iconIndex[name]
     if (flat !== undefined) return flat
     var v = root.vendorIndex[name]
-    return v === undefined ? "" : v
+    if (v !== undefined) return v
+    var own = root.pluginIconIndex[name]
+    return own === undefined ? "" : own
   }
 
   // Friendly app name for the class, shown ahead of the window title as
@@ -926,7 +987,7 @@ Item {
   //    a valuesChanged signal instead deadlocks the already-populated case --
   //    the signal has already been and gone, and the list stays empty forever.
   //    That was a real bug here, not a hypothetical.
-  Component.onCompleted: { iconScan.running = true; vendorScan.running = true; Hyprland.refreshToplevels(); root._rebuild() }
+  Component.onCompleted: { iconScan.running = true; vendorScan.running = true; pluginIconScan.running = true; Hyprland.refreshToplevels(); root._rebuild() }
 
   // Events that can change the set of windows or their on-screen order. Focus
   // changes are deliberately absent: `activated` already tracks those live, and
@@ -1976,8 +2037,13 @@ Item {
                 // Derived from the path rather than tracked separately, and
                 // stable per tile either way -- nothing here reads Image.status,
                 // which is what made layer.enabled safe in the first place.
+                // Recoloured at draw time, from either flat source: the user's
+                // own repainted drop-ins, or the flat half of what this plugin
+                // ships. Everything else -- vendor artwork, and the plugin's own
+                // icons/color/ -- reaches the screen with its colours intact.
                 readonly property bool iconIsFlat: mark.hasIcon
-                  && mark.iconUrl.indexOf("file://" + root.flatIconDir) === 0
+                  && (mark.iconUrl.indexOf("file://" + root.flatIconDir) === 0
+                      || mark.iconUrl.indexOf("file://" + root.pluginFlatDir) === 0)
                 readonly property bool isWorkspace: modelData.kind === "workspace"
 
                 // What is running inside this terminal, if anything an icon
@@ -1990,7 +2056,8 @@ Item {
                   root.badgeFor(modelData.cls, modelData.title)
                 readonly property bool hasBadge: mark.badgeUrl.length > 0
                 readonly property bool badgeIsFlat: mark.hasBadge
-                  && mark.badgeUrl.indexOf("file://" + root.flatIconDir) === 0
+                  && (mark.badgeUrl.indexOf("file://" + root.flatIconDir) === 0
+                      || mark.badgeUrl.indexOf("file://" + root.pluginFlatDir) === 0)
 
                 // Match the INK, not the canvas -- but only where there IS
                 // canvas, which is the half of this that was wrong.
@@ -2677,6 +2744,7 @@ Item {
           readonly property string url: ghost.win ? root.iconFor(ghost.win.cls) : ""
           readonly property bool isFlat:
             ghostMark.url.indexOf("file://" + root.flatIconDir) === 0
+            || ghostMark.url.indexOf("file://" + root.pluginFlatDir) === 0
 
           Image {
             id: ghostImage

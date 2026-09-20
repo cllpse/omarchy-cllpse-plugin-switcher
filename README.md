@@ -101,7 +101,7 @@ compositor-side can say which process belongs to which window. Shell integration
 sets the title to the command as typed, which is the better signal anyway.
 
 Marks are resolved by name against your installed icon themes, and the plugin
-ships a small set of its own ([`icons/`](icons/AGENTS.md) — the agent CLIs and a
+ships a small set of its own ([`icons/`](AGENTS.md) — the agent CLIs and a
 few dev tools that no icon theme carries) so the feature does something out of
 the box. Those resolve **last**, after your own drop-ins and after every
 installed theme, so they only ever fill a gap. A program with no icon anywhere
@@ -118,7 +118,7 @@ the point.
 `.../color/` (verbatim) — outside the plugin, so an update cannot conflict with
 it — and restart the shell. Name it after the command; if the two differ, add a
 line to [`badge-aliases.json`](badge-aliases.json).
-[`icons/AGENTS.md`](icons/AGENTS.md) has the details.
+[`AGENTS.md`](AGENTS.md) has the details.
 
 **The alias table is opinionated, and it is yours to edit.** It lives in
 [`badge-aliases.json`](badge-aliases.json) at the root of this repository, not

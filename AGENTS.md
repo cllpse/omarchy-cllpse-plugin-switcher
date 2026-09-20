@@ -96,7 +96,10 @@ magick /tmp/check.png -alpha extract -format "%[fx:minima]\n" info:   # backgrou
 - **It has to work on the themes you use.** Nothing recolours it. A pure-black
   mark disappears on a dark card and a pure-white one on a light card — that is
   the file's problem to solve, not the plugin's.
-- **Licensing is yours to check.** These are third-party brand marks.
+- **Licensing is yours to check.** These are third-party brand marks, and the
+  set already shipped here is not MIT either — see the License section of
+  [`README.md`](README.md). Adding one extends what this repository
+  redistributes, so it is a decision, not a chore.
 
 ## Where an icon can live
 

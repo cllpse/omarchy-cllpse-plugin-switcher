@@ -132,7 +132,11 @@ encode *one particular* shell's aliases:
 | `dash` | `gh` | alias to `gh dash` |
 | `edit` | `msedit`, `ls` → `lsd` | tool aliases |
 | `claude` | `claude-code` | icons are named for a desktop entry's `Icon=`, not for the command |
-| `node`, `psql`, `python3`, `sqlite3`, `ytm` | `nodejs`, `postgresql`, `python`, `sqlite`, `youtube-music` | same |
+| `convert`, `magick` | `imagemagick` | same |
+| `ffprobe` | `ffmpeg` | same |
+| `node`, `psql`, `python3`, `redis-cli`, `sqlite3`, `ytm` | `nodejs`, `postgresql`, `python`, `redis`, `sqlite`, `youtube-music` | same |
+
+That is all 15 shipped entries.
 
 If you do not alias `diff` to `hunk`, a real `diff` run gets a hunk icon —
 delete that line. The file takes whole-line `//` comments, and **saved edits
@@ -167,4 +171,15 @@ from a theme's `[spacing]` section if you want them different:
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+The plugin itself — `Hud.qml`, the Hyprland snippets, the docs — is MIT; see
+[LICENSE](LICENSE).
+
+**The marks in [`icons/`](icons) are not, and are not mine to relicense.** They
+are hand-sourced reproductions of other projects' icons. Some are product
+trademarks (Figma, Cursor, Ghostty, Slack, Docker, YouTube, Claude and others);
+the rest are generic freedesktop icons carrying their own upstream licenses.
+Shipping a mark to identify the program it belongs to is ordinary nominative
+use, but redistribution is not a right any of those owners grant. If that does
+not suit how you are using this, delete the file — an icon that resolves to
+nothing falls back to your installed themes and then to no icon at all, and
+nothing here is generated, so nothing puts it back.

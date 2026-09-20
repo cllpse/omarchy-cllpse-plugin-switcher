@@ -53,10 +53,28 @@ Two-tone marks are the other trap. `jq` (`#111`/`#444`) and `copilot`
 (`#000000`) flatten harmlessly; `opencode` carries white as a *shape* and is in
 `color/` because flattening would fill those holes in.
 
+## Adding a mark without touching this repository
+
+A user's own marks go outside the plugin, so an `omarchy plugin update` cannot
+conflict with them:
+
+```
+~/.config/omarchy/cllpse.window-switcher/icons/flat/    recoloured to theme
+~/.config/omarchy/cllpse.window-switcher/icons/color/   drawn verbatim
+```
+
+Same two directories, same meaning, and they are searched **first** — before the
+icon themes and before this repository — so a mark placed there wins. Everything
+below about shape and which directory applies there too.
+
+The index is built once at launch, so a newly added mark needs
+`omarchy-restart-shell`. Deliberate: adding an icon is a rare act, and watching
+three directories to catch it would be machinery for nothing.
+
 ## What belongs here
 
-These resolve **last** — after the user's own drop-ins in `~/.icons/cllpse-flat`
-and after every installed icon theme. Verified on a machine with 1364 themed
+These resolve **last** — after the user's own directory above and after every
+installed icon theme. Verified on a machine with 1364 themed
 icon names: `claude-code`, `codex` and `opencode` all resolved to the user's
 copies, not these. So a mark here can only ever fill a gap; it never overrides
 something somebody chose.

@@ -56,7 +56,7 @@ Item {
   //
   // Ordinary press / move / release, which the surface only gets because the
   // "Move window" bind stands down while the strip is up -- see
-  // overrides/hypr/window-switcher-bindings.lua. Hyprland resolves mouse binds
+  // hypr/window-switcher-bindings.lua. Hyprland resolves mouse binds
   // before handing a button to a layer surface, so for as long as SUPER +
   // mouse:272 was bound the HUD could be told a click HAPPENED (by the bind
   // dispatching into it) but never got the press itself, and a drag needs all
@@ -167,7 +167,7 @@ Item {
   // That is the sluggishness -- it was paid on every single TAB.
   //
   // A GlobalShortcut is registered here and bound in
-  // overrides/hypr/window-switcher-bindings.lua with hl.dsp.global(), so the
+  // hypr/window-switcher-bindings.lua with hl.dsp.global(), so the
   // compositor delivers the key straight to this process over the Wayland
   // protocol. No fork, no exec, no Qt startup.
   //
@@ -301,7 +301,35 @@ Item {
     root.dismiss()
   }
 
+  // Where a USER drops marks of their own. Owned by this plugin, outside the
+  // repository, so an `omarchy plugin update` cannot conflict with it and
+  // nothing else has to be installed for it to work:
+  //
+  //   ~/.config/omarchy/cllpse.window-switcher/icons/flat/   recoloured to theme
+  //   ~/.config/omarchy/cllpse.window-switcher/icons/color/  drawn verbatim
+  //
+  // Same split, and the same meaning, as the plugin's own icons/ -- see
+  // icons/AGENTS.md.
+  readonly property string userIconRoot:
+    Quickshell.env("HOME") + "/.config/omarchy/cllpse.window-switcher/icons/"
+
+  // An optional integration, NOT a dependency. omarchy-cllpse-macos, the
+  // configuration this plugin was extracted from, syncs repainted drop-ins here
+  // for the Omarchy menu, and reading them means its users get the same marks in
+  // both places. On any other machine the directory does not exist, `find` says
+  // so on stderr, and the index is simply built without it -- every tile keeps
+  // its Nerd Font glyph, which is what a machine with no drop-ins has always
+  // done.
   readonly property string flatIconDir: Quickshell.env("HOME") + "/.icons/cllpse-flat/apps/"
+
+  // One test, three flat sources, so "is this recoloured at draw time" cannot
+  // mean different things in the three places that ask.
+  function _isFlatUrl(u) {
+    var s = String(u || "")
+    return s.indexOf("file://" + root.userIconRoot + "flat/") === 0
+      || s.indexOf("file://" + root.flatIconDir) === 0
+      || s.indexOf("file://" + root.pluginFlatDir) === 0
+  }
 
   // ── Marks the plugin ships itself ───────────────────────────────────────────
   //
@@ -362,8 +390,8 @@ Item {
   // Propo on this machine, via OMARCHY_MENU_FONT -- so every codepoint here is
   // verified against THAT face, not against the monospace one the terminal uses.
   //
-  // Keyed on the window class, which is all a switcher has. The drop-ins in
-  // overrides/icons/fallbacks/ are named for a desktop entry's `Icon=` instead,
+  // Keyed on the window class, which is all a switcher has. A drop-in is named
+  // for a desktop entry's `Icon=` instead,
   // and the two keyspaces genuinely differ: measured on this machine, 6 of the
   // 23 entries declaring StartupWMClass use a class that is not their icon
   // name, and Chromium's is the literal unsubstituted "@@startup_wm_class". So
@@ -424,9 +452,11 @@ Item {
 
   // A hand-placed icon for this window's app, if one exists.
   //
-  // apply.sh syncs overrides/icons/fallbacks/ into ~/.icons/cllpse-flat/apps/,
-  // repainted in the theme foreground, for the Omarchy menu -- which cannot
-  // render a glyph at all and would otherwise show the vendor's colour logo.
+  // Three sources, in order: the user's own directory, whatever their icon
+  // themes carry, and the marks this plugin ships. The first is also where
+  // omarchy-cllpse-macos syncs repainted drop-ins for the Omarchy menu -- which
+  // cannot render a glyph at all and would otherwise show the vendor's colour
+  // logo -- so on that configuration both surfaces show the same mark.
   // Reusing those files here is what lets the switcher show the same mark the
   // SUPER+SPACE menu does for an app whose logo no glyph depicts.
   //
@@ -643,10 +673,19 @@ Item {
   // `ls` directly rather than through a shell: Process runs the argv as given,
   // so the directory needs no quoting. A missing directory writes to stderr and
   // leaves stdout empty, which lands as an empty index -- every tile a glyph,
-  // which is exactly the old behaviour on a machine where apply.sh never ran.
+  // which is exactly the behaviour on a machine with no drop-ins at all.
   //
-  // Once per launch, which is only safe because something restarts the shell
-  // whenever the set changes. That something is app-icons.sh, not `omarchy
+  // Once per launch, so a mark added afterwards is not seen until the shell
+  // restarts. That is the honest cost of not watching the directory, and it is
+  // stated in icons/AGENTS.md rather than worked around: adding an icon is a
+  // rare, deliberate act, and a watcher on three directories to catch it would
+  // be machinery for nothing.
+  //
+  // On omarchy-cllpse-macos, the configuration this plugin came from, the
+  // restart is automatic: its app-icons.sh hook restarts the shell from an EXIT
+  // trap when a synced file actually changed. That is that configuration's
+  // doing, not this plugin's, and worth knowing only because it is why the
+  // staleness never shows up there. Note it is the hook, not `omarchy
   // theme set` -- theme-set pushes the palette in over IPC and restarts the
   // terminal, hyprctl, btop, opencode and helix, never the shell (measured: the
   // quickshell pid is unchanged across one). The hook restarts it from an EXIT
@@ -657,7 +696,11 @@ Item {
   // Font glyph with nothing to say why.
   Process {
     id: iconScan
-    command: ["ls", "-1", root.flatIconDir]
+    // Both roots in one find. A missing directory is an stderr line and
+    // nothing else -- the others are still walked, and StdioCollector only
+    // reads stdout -- which is exactly the degradation wanted: a machine with
+    // neither directory gets an empty index rather than an error.
+    command: ["find", root.userIconRoot, root.flatIconDir, "-name", "*.svg"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root._applyIconIndex(text)
@@ -668,7 +711,10 @@ Item {
     var idx = {}
     var lines = String(text || "").split("\n")
     for (var i = 0; i < lines.length; i++) {
-      var f = lines[i].trim()
+      var pth = lines[i].trim()
+      if (pth.length === 0) continue
+      var slash = pth.lastIndexOf("/")
+      var f = slash >= 0 ? pth.substring(slash + 1) : pth
       var dot = f.lastIndexOf(".")
       if (dot <= 0) continue
       // .svg only, deliberately. Rasters were dropped from fallbacks/ so that
@@ -677,7 +723,10 @@ Item {
       // cannot quietly reintroduce the second convention; the app falls back to
       // its glyph until the file is regenerated, which is the honest result.
       if (f.substring(dot + 1).toLowerCase() !== "svg") continue
-      idx[f.substring(0, dot)] = "file://" + root.flatIconDir + f
+      // First hit wins, and the user's own root is walked first, so a mark they
+      // placed outranks anything synced in beside it.
+      var name = f.substring(0, dot)
+      if (idx[name] === undefined) idx[name] = "file://" + pth
     }
     root.iconIndex = idx
   }
@@ -781,10 +830,11 @@ Item {
   // In practice the second index is what answers most of these, and it is the
   // right one to land on. ../icons/color/ is where a mark that only reads in
   // its OWN colours lives -- the Figma logo, and every CLI and agent mark
-  // beside it -- and app-icons.sh syncs it to ~/.icons/cllpse-color/apps/,
-  // which the vendor sweep already covers. Because that path is not under
-  // flatIconDir, badgeIsFlat is false and the badge is drawn verbatim rather
-  // than repainted, which is the whole point of that directory.
+  // beside it. On omarchy-cllpse-macos that set is synced to
+  // ~/.icons/cllpse-color/apps/, which the vendor sweep already covers; here the
+  // same distinction is icons/color/ against icons/flat/. Either way the path
+  // is not one _isFlatUrl recognises, so badgeIsFlat is false and the badge is
+  // drawn verbatim rather than repainted, which is the whole point.
   //
   // No glyph fallback: at badge size a Nerd Font glyph is a smudge, and "no icon
   // for this" is better read as no badge than as a mark nobody can identify.
@@ -1762,7 +1812,7 @@ Item {
     // switcher with it. Change it in shell.menu.toml, not here.
     //
     // Still below the layer rule's ignore_alpha (0.6) in
-    // overrides/hypr/looknfeel-decoration.lua -- 0.25 is further below it than
+    // hypr/window-switcher-looknfeel.lua -- 0.25 is further below it than
     // 0.35 was -- so the scrim stays unblurred and the windows being switched
     // between remain readable.
     Rectangle {
@@ -1778,7 +1828,7 @@ Item {
       // CONTENT did not ramp, which read as noticeably faster than the Omarchy
       // panels beside it.
       //
-      // overrides/hypr/looknfeel-decoration.lua now puts this namespace in the
+      // hypr/window-switcher-looknfeel.lua now puts this namespace in the
       // same `animation = "fade"` layer rule as the menu and the other
       // keyboard-driven panels, so the whole surface ramps over layersIn's
       // 133ms on easeOutQuint. A Behavior here would stack on top of that.
@@ -2030,9 +2080,8 @@ Item {
 
               // The mark. Almost always a Nerd Font glyph rendered as text --
               // crisp at this size, and it recolours for free on selection. The
-              // exception is an app with a hand-placed icon in
-              // overrides/icons/fallbacks/, which the menu also uses -- see
-              // iconFor() above.
+              // exception is an app with a hand-placed icon in one of the
+              // drop-in directories -- see iconFor() above.
               //
               // That SVG is baked at the theme `foreground`, but a selected tile
               // draws in `selected-text` (#007AFF accent in both our themes), so
@@ -2067,9 +2116,7 @@ Item {
                 // own repainted drop-ins, or the flat half of what this plugin
                 // ships. Everything else -- vendor artwork, and the plugin's own
                 // icons/color/ -- reaches the screen with its colours intact.
-                readonly property bool iconIsFlat: mark.hasIcon
-                  && (mark.iconUrl.indexOf("file://" + root.flatIconDir) === 0
-                      || mark.iconUrl.indexOf("file://" + root.pluginFlatDir) === 0)
+                readonly property bool iconIsFlat: mark.hasIcon && root._isFlatUrl(mark.iconUrl)
                 readonly property bool isWorkspace: modelData.kind === "workspace"
 
                 // What is running inside this terminal, if anything an icon
@@ -2081,9 +2128,7 @@ Item {
                 readonly property string badgeUrl:
                   root.badgeFor(modelData.cls, modelData.title)
                 readonly property bool hasBadge: mark.badgeUrl.length > 0
-                readonly property bool badgeIsFlat: mark.hasBadge
-                  && (mark.badgeUrl.indexOf("file://" + root.flatIconDir) === 0
-                      || mark.badgeUrl.indexOf("file://" + root.pluginFlatDir) === 0)
+                readonly property bool badgeIsFlat: mark.hasBadge && root._isFlatUrl(mark.badgeUrl)
 
                 // Match the INK, not the canvas -- but only where there IS
                 // canvas, which is the half of this that was wrong.
@@ -2094,10 +2139,10 @@ Item {
                 // pixelSize with nothing to reconcile.
                 //
                 // It used to scale the box by 256/200, which was right for a PNG
-                // and wrong for an SVG. app-icons.sh trimmed each raster and
-                // re-padded it onto a 256x256 canvas at 200x200, so its ink
-                // really was 200/256 of the file, while the SVG branch only
-                // recoloured and copied -- a simple-icons source arriving
+                // and wrong for an SVG. The sync this plugin was extracted
+                // alongside trimmed each raster and re-padded it onto a 256x256
+                // canvas at 200x200, so its ink really was 200/256 of the file,
+                // while the SVG branch only recoloured and copied -- a simple-icons source arriving
                 // edge-to-edge. Applying the raster ratio to both drew every SVG
                 // 28% oversized, overflowing the mark and clipping top and
                 // bottom, while the correctly-sized rasters beside them looked
@@ -2172,7 +2217,7 @@ Item {
                 Text {
                   id: glyphText
                   anchors.centerIn: parent
-                  // Covers apply.sh step 7f never having run, an empty
+                  // Covers a machine with no drop-in directory at all, an empty
                   // fallbacks/ directory and a name mismatch alike: all three
                   // leave the class out of the index, so every tile stays a glyph.
                   visible: !mark.hasIcon && !mark.isWorkspace
@@ -2768,9 +2813,7 @@ Item {
           anchors.verticalCenter: parent.verticalCenter
 
           readonly property string url: ghost.win ? root.iconFor(ghost.win.cls) : ""
-          readonly property bool isFlat:
-            ghostMark.url.indexOf("file://" + root.flatIconDir) === 0
-            || ghostMark.url.indexOf("file://" + root.pluginFlatDir) === 0
+          readonly property bool isFlat: root._isFlatUrl(ghostMark.url)
 
           Image {
             id: ghostImage

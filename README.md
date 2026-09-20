@@ -113,6 +113,13 @@ recoloured at draw time from live theme roles, so a theme change is picked up
 immediately. `icons/color/` is drawn verbatim, for marks whose own colours are
 the point.
 
+**To add your own**, drop an SVG into
+`~/.config/omarchy/cllpse.window-switcher/icons/flat/` (recoloured) or
+`.../color/` (verbatim) — outside the plugin, so an update cannot conflict with
+it — and restart the shell. Name it after the command; if the two differ, add a
+line to [`badge-aliases.json`](badge-aliases.json).
+[`icons/AGENTS.md`](icons/AGENTS.md) has the details.
+
 **The alias table is opinionated, and it is yours to edit.** It lives in
 [`badge-aliases.json`](badge-aliases.json) at the root of this repository, not
 in the QML. A command is looked up by its own name, so `btop`, `git`, `docker`,

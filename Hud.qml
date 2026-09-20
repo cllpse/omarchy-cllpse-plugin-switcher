@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Effects
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
@@ -316,17 +315,6 @@ Item {
   // done.
   readonly property string legacyIconDir: Quickshell.env("HOME") + "/.icons/cllpse-flat/apps/"
 
-  // Which icons are recoloured to the theme, keyed by url.
-  //
-  // There is no flat/ and color/ split any more: one directory, and the FILE
-  // says which it is. An SVG that declares no colour of its own renders black,
-  // which is invisible on a dark card, so it is a silhouette and takes the
-  // theme's colour; one that declares a colour means it, and is drawn verbatim.
-  // The rule is inspectable with `grep fill= <file>`, needs no naming
-  // convention, and cannot be got wrong by filing something in the wrong place.
-  property var themedIcons: ({})
-
-  function _isThemedUrl(u) { return root.themedIcons[String(u || "")] === true }
   // ── Marks the plugin ships itself ───────────────────────────────────────────
   //
   // A small set of CLI and agent marks under icons/, so the terminal process icons work
@@ -336,7 +324,6 @@ Item {
   //
   // These need NO theme hook, which is the whole reason they can live in a
   // plugin at all. `icons/flat/` is recoloured at DRAW time by the same
-  // MultiEffect the tiles already use, from `Color.menu.text` /
   // `Color.menu.selectedText` -- live theme roles, so a theme change is picked
   // up immediately. That is strictly better than the synced path it mirrors:
   // a theme-set hook bakes a fixed colour into a copy under ~/.icons and needs
@@ -357,11 +344,7 @@ Item {
     // One find over both directories rather than an `ls` each: two Processes to
     // read eleven filenames is two too many, and a missing directory is simply
     // no output rather than an error.
-    command: ["bash", "-c",
-      "find " + root.pluginRoot + "icons -name '*.svg' 2>/dev/null"
-      + " | while IFS= read -r f; do"
-      + " if grep -qE '(fill|stroke)[=:][^;>]*(#|white|black|rgb)' \"$f\";"
-      + " then echo \"c $f\"; else echo \"t $f\"; fi; done"]
+    command: ["find", root.pluginRoot + "icons", "-name", "*.svg"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root._applyPluginIconIndex(text)
@@ -370,13 +353,9 @@ Item {
 
   function _applyPluginIconIndex(text) {
     var idx = {}
-    var themed = ({})
     var lines = String(text || "").split("\n")
     for (var i = 0; i < lines.length; i++) {
-      var line = lines[i]
-      if (line.length < 3) continue
-      var tag = line.charAt(0)
-      var pth = line.substring(2).trim()
+      var pth = lines[i].trim()
       if (pth.length === 0) continue
       var slash = pth.lastIndexOf("/")
       var file = slash >= 0 ? pth.substring(slash + 1) : pth
@@ -385,9 +364,7 @@ Item {
       var name = file.substring(0, dot)
       if (idx[name] !== undefined) continue
       idx[name] = "file://" + pth
-      if (tag === "t") themed["file://" + pth] = true
     }
-    root.themedIcons = Object.assign({}, root.themedIcons, themed)
     root.pluginIconIndex = idx
   }
 
@@ -707,11 +684,7 @@ Item {
     // an stderr line and nothing else -- the others are still walked, and
     // StdioCollector only reads stdout -- which is the degradation wanted: a
     // machine with neither gets an empty index rather than an error.
-    command: ["bash", "-c",
-      "find " + root.userIconRoot + " " + root.legacyIconDir + " -name '*.svg' 2>/dev/null"
-      + " | while IFS= read -r f; do"
-      + " if grep -qE '(fill|stroke)[=:][^;>]*(#|white|black|rgb)' \"$f\";"
-      + " then echo \"c $f\"; else echo \"t $f\"; fi; done"]
+    command: ["find", root.userIconRoot, root.legacyIconDir, "-name", "*.svg"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root._applyIconIndex(text)
@@ -720,13 +693,9 @@ Item {
 
   function _applyIconIndex(text) {
     var idx = {}
-    var themed = ({})
     var lines = String(text || "").split("\n")
     for (var i = 0; i < lines.length; i++) {
-      var line = lines[i]
-      if (line.length < 3) continue
-      var tag = line.charAt(0)
-      var pth = line.substring(2).trim()
+      var pth = lines[i].trim()
       if (pth.length === 0) continue
       var slash = pth.lastIndexOf("/")
       var f = slash >= 0 ? pth.substring(slash + 1) : pth
@@ -743,9 +712,7 @@ Item {
       var name = f.substring(0, dot)
       if (idx[name] !== undefined) continue
       idx[name] = "file://" + pth
-      if (tag === "t") themed["file://" + pth] = true
     }
-    root.themedIcons = Object.assign({}, root.themedIcons, themed)
     root.iconIndex = idx
   }
 
@@ -851,8 +818,7 @@ Item {
   // beside it. On omarchy-cllpse-macos that set is synced to
   // ~/.icons/cllpse-color/apps/, which the vendor sweep already covers; here the
   // same distinction is icons/color/ against icons/flat/. Either way the path
-  // is not one _isFlatUrl recognises, so processIconIsThemed is false and the processIcon is
-  // drawn verbatim rather than repainted, which is the whole point.
+  // is drawn exactly as the file is, like every other icon here.
   //
   // No glyph fallback: at processIcon size a Nerd Font glyph is a smudge, and "no icon
   // for this" is better read as no processIcon than as a mark nobody can identify.
@@ -2101,12 +2067,12 @@ Item {
               // exception is an app with a hand-placed icon in one of the
               // drop-in directories -- see iconFor() above.
               //
-              // That SVG is baked at the theme `foreground`, but a selected tile
-              // draws in `selected-text` (#007AFF accent in both our themes), so
-              // blitting it as-is would leave the FOCUSED tile showing a grey
-              // icon under a blue label. MultiEffect recolours it, exactly the
-              // way Omarchy tints symbolic tray icons (Tray.qml:789). Measured at
-              // ~0.002 ms per icon, against the handful of tiles a switcher shows.
+              // Drawn exactly as the file is. No recolouring, here or anywhere:
+              // an icon is the source of truth for its own appearance, and
+              // whoever placed it decided how it should look. The only thing
+              // this plugin does to an icon is scale its viewBox to match the
+              // others, and that happens in the FILE -- see AGENTS.md -- never
+              // at draw time.
               //
               // Height tracks the fallback Text's implicitHeight, not iconSize,
               // so swapping a glyph for an image shifts no layout: line height
@@ -2122,19 +2088,10 @@ Item {
                 // off -- deliberately NOT Image.status, see iconFor() above.
                 readonly property string iconUrl: root.iconFor(modelData.cls)
                 readonly property bool hasIcon: mark.iconUrl.length > 0
-                // Where the url came from decides how it is drawn: a drop-in is
-                // repainted to the theme foreground by the MultiEffect below,
-                // while vendor artwork is the whole point of the flag and has
-                // to reach the screen with its own colours intact.
-                //
-                // Derived from the path rather than tracked separately, and
-                // stable per tile either way -- nothing here reads Image.status,
-                // which is what made layer.enabled safe in the first place.
                 // Recoloured at draw time, from either flat source: the user's
                 // own repainted drop-ins, or the flat half of what this plugin
                 // ships. Everything else -- vendor artwork, and the plugin's own
                 // icons/color/ -- reaches the screen with its colours intact.
-                readonly property bool iconIsFlat: mark.hasIcon && root._isFlatUrl(mark.iconUrl)
                 readonly property bool isWorkspace: modelData.kind === "workspace"
 
                 // What is running inside this terminal, if anything an icon
@@ -2146,7 +2103,6 @@ Item {
                 readonly property string processIconUrl:
                   root.processIconFor(modelData.cls, modelData.title)
                 readonly property bool hasProcessIcon: mark.processIconUrl.length > 0
-                readonly property bool processIconIsThemed: mark.hasProcessIcon && root._isFlatUrl(mark.processIconUrl)
 
                 // Match the INK, not the canvas -- but only where there IS
                 // canvas, which is the half of this that was wrong.
@@ -2185,7 +2141,6 @@ Item {
                 readonly property int decodePx: Math.ceil(card.iconDrawn * Screen.devicePixelRatio)
 
                 Image {
-                  id: flatMark
                   anchors.centerIn: parent
                   width: card.iconDrawn
                   height: width
@@ -2213,23 +2168,12 @@ Item {
                   // omarchy agent and the screensaver do not, so roughly half the
                   // strip was paying for a layer it never sampled.
                   //
-                  // Keyed on hasIcon, not on status. status is not stable across a
-                  // DPR change -- Qt reloads the Image from inside the item-tree
-                  // walk -- and a layer destroyed mid-walk is what aborted the
-                  // shell. hasIcon comes from the cached index and cannot move
-                  // while the walk runs.
-                  // Drawn directly when it is vendor art; kept as a hidden
-                  // layer for the MultiEffect to sample when it is a drop-in.
-                  visible: mark.hasIcon && !mark.iconIsFlat
-                  layer.enabled: mark.iconIsFlat
-                }
-
-                MultiEffect {
-                  anchors.fill: flatMark
-                  source: flatMark
-                  visible: mark.iconIsFlat
-                  colorization: 1.0
-                  colorizationColor: cell.sel ? Color.menu.selectedText : Color.menu.text
+                  // Keyed on hasIcon, not on status. status is not stable
+                  // across a DPR change -- Qt reloads the Image from inside the
+                  // item-tree walk -- and structure destroyed mid-walk is what
+                  // aborted the shell. hasIcon comes from the cached index and
+                  // cannot move while the walk runs.
+                  visible: mark.hasIcon
                 }
 
                 Text {
@@ -2311,53 +2255,22 @@ Item {
                   y: (mark.height + card.iconDrawn) / 2 - processIcon.height + card.processIconOffset
 
                   sourceComponent: Item {
-                    // No separation layer behind the processIcon, deliberately.
-                    //
-                    // Two have been tried here and both were worse than
-                    // nothing. A filled rounded rect in the tile's background
-                    // colour is a BOX, and it is visible as a box the moment
-                    // the theme stops matching the art -- invisible on light,
-                    // then punching a dark square through the ghost on the
-                    // first dark theme. A MultiEffect shadow at zero offset in
-                    // the same colour fits the shape rather than a rectangle,
-                    // which is the right idea and still failed on the mark that
-                    // matters most: Claude's logo is a sparse radial burst, so
-                    // a silhouette blurred and scaled 18% up has far more area
-                    // than the rays casting it and pools into a smudge between
-                    // them -- landing on the ghost's white body, at maximum
-                    // contrast. It read cleanly on solid marks like btop's,
-                    // which is exactly why it survived a first look.
-                    //
-                    // The processIcon hangs mostly outside the icon at the current
-                    // offset, so it needs less separation than either attempt
-                    // assumed. If a mark ever does need it, fit it to that
-                    // mark; do not reintroduce a global one.
-                    //
-                    // One MultiEffect still serves both kinds of processIcon. That
-                    // arrived with the shadow but is worth keeping on its own:
-                    // colorization is switched off for a vendor mark so its own
-                    // colours reach the screen, and on for a flat drop-in.
+                    // Nothing behind it, and nothing done to it. Two
+                    // separation layers were tried and both were worse than
+                    // nothing: a filled plate is visible AS a plate the moment
+                    // the theme stops matching the art -- it punched a dark
+                    // square through the ghost on the first dark theme -- and a
+                    // fitted shadow pools into a smudge on a sparse mark like
+                    // Claude's. The icon hangs mostly outside the terminal's own
+                    // at the current offset, so it needs less than either
+                    // attempt assumed.
                     Image {
-                      id: processIconImage
                       anchors.fill: parent
                       source: mark.processIconUrl
                       sourceSize.width: Math.ceil(processIcon.width * Screen.devicePixelRatio)
                       sourceSize.height: Math.ceil(processIcon.width * Screen.devicePixelRatio)
                       fillMode: Image.PreserveAspectFit
                       asynchronous: true
-                      // Sampled as a texture, never drawn directly. Same shape
-                      // the tile's own mark uses for its flat branch, and keyed
-                      // on nothing that can move while Qt walks the item tree.
-                      visible: false
-                      layer.enabled: true
-                    }
-
-                    MultiEffect {
-                      anchors.fill: processIconImage
-                      source: processIconImage
-                      colorization: mark.processIconIsThemed ? 1.0 : 0.0
-                      colorizationColor: cell.sel ? Color.menu.selectedText
-                                                  : Color.menu.text
                     }
                   }
                 }
@@ -2831,10 +2744,8 @@ Item {
           anchors.verticalCenter: parent.verticalCenter
 
           readonly property string url: ghost.win ? root.iconFor(ghost.win.cls) : ""
-          readonly property bool isFlat: root._isFlatUrl(ghostMark.url)
 
           Image {
-            id: ghostImage
             anchors.centerIn: parent
             width: card.iconDrawn
             height: width
@@ -2843,16 +2754,7 @@ Item {
             sourceSize.height: Math.ceil(card.iconDrawn * Screen.devicePixelRatio)
             fillMode: Image.PreserveAspectFit
             asynchronous: true
-            visible: ghostMark.url.length > 0 && !ghostMark.isFlat
-            layer.enabled: ghostMark.isFlat
-          }
-
-          MultiEffect {
-            anchors.fill: ghostImage
-            source: ghostImage
-            visible: ghostMark.isFlat
-            colorization: 1.0
-            colorizationColor: Color.menu.selectedText
+            visible: ghostMark.url.length > 0
           }
 
           Text {

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <title>YouTube Music</title>
+  <circle cx="12" cy="12" r="12" fill="#FF0000"/>
+  <path fill="#FFFFFF" fill-rule="evenodd" d="M12 4.896a7.104 7.104 0 1 0 0 14.208 7.104 7.104 0 0 0 0-14.208zm0 .876a6.228 6.228 0 1 1 0 12.456 6.228 6.228 0 0 1 0-12.456z"/>
+  <path fill="#FFFFFF" d="M9.684 8.46 15.816 12l-6.132 3.54z"/>
+</svg>

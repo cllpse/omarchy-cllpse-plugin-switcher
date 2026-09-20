@@ -101,24 +101,23 @@ compositor-side can say which process belongs to which window. Shell integration
 sets the title to the command as typed, which is the better signal anyway.
 
 Icons are resolved by name against your installed icon themes, and the plugin
-ships a small set of its own ([`icons/`](icons) — the agent CLIs and a few dev
-tools that no icon theme carries) so the feature does something out of the box.
+ships [75 of its own](icons) — app marks and CLI/agent logos, including
+Ghostty's — so both the tiles and the process icons do something out of the box.
 Those resolve **last**, after your own and after every installed theme, so they
 only ever fill a gap. A program with no icon anywhere simply gets none. Claude
 Code is recognised by the status marker it writes into the title.
 
-The shipped icons need no theme hook and no sync step, and there is only one
-directory. **The file decides how it is drawn**: an SVG that declares no colour
-of its own is a silhouette and is recoloured to the theme at draw time, live; one
-that declares a colour means it and is drawn verbatim. `grep fill= <file>` tells
-you which you have.
+**An icon is drawn exactly as it is.** No recolouring, no tinting, no theme
+adaptation — the file is the source of truth for its own appearance, and the only
+thing the plugin ever changes about one is its `viewBox`, so that every icon
+fills its box the way Ghostty's does and they all render at the same size.
 
 **To add your own**, drop an SVG into
 `~/.config/omarchy/cllpse.window-switcher/icons/` — outside the plugin, so an
-update cannot conflict with it — and restart the shell. Name it after the
-command; if the two differ, add a line to
+update cannot conflict with it — and restart the shell. Name it after the window
+class or the command; if the name and the icon differ, add a line to
 [`icon-aliases.json`](icon-aliases.json). [`AGENTS.md`](AGENTS.md) has the
-details.
+details, including how to scale a new one to match.
 
 **The alias table is opinionated, and it is yours to edit.** It lives in
 [`icon-aliases.json`](icon-aliases.json) at the root of this repository, not

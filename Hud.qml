@@ -1013,6 +1013,29 @@ Item {
   // again, not once per title change.
   property bool faviconSwept: false
 
+  // How many times each on-screen title has been ASKED about without an answer
+  // coming back. The cap below is what makes the retry bounded rather than a
+  // poll: a title that can never resolve -- an incognito window, a local file,
+  // a chrome:// page -- costs three spawns spread over half a minute and then
+  // stops, while one that was merely EARLY gets the second look it needs.
+  //
+  // Pruned alongside faviconIndex, so it stays bounded by what is on screen. A
+  // window that navigates away and back starts over, which is right: that is a
+  // fresh sighting, and the database it failed against has moved on since.
+  property var faviconTries: ({})
+
+  // Three attempts at 12s apart covers ~24s against the 10.07s Chromium takes
+  // to commit a visit -- measured, and it is kCommitIntervalSeconds rather
+  // than a figure worth re-deriving. Two would just about do for Chromium on
+  // its own and leaves nothing for a profile that is mid-write on the retry.
+  readonly property int faviconMaxTries: 3
+
+  // Set by faviconRetry alone and cleared by the first _refreshFavicons that
+  // reads it. It is what lets a retry through the unchanged-key-set guard
+  // WITHOUT letting every window event through it -- which is the whole reason
+  // that guard exists. See _refreshFavicons.
+  property bool faviconRetryDue: false
+
   Process {
     id: faviconDiscover
     command: ["python3", "-S", root.pluginRoot + "favicons.py", "--discover"]
@@ -1072,6 +1095,20 @@ Item {
     return idx
   }
 
+  // Same bound as _pruneFavicons and for the same reason: keyed on what is on
+  // screen, never on everything that has ever been asked about. typeof rather
+  // than a plain test, like every other lookup in here -- a page titled
+  // "constructor" reads the inherited Object.prototype member otherwise.
+  function _pruneFaviconTries() {
+    var live = root.faviconLive
+    var t = ({})
+    for (var k = 0; k < live.length; k++) {
+      var n = root.faviconTries[live[k]]
+      if (typeof n === "number") t[live[k]] = n
+    }
+    return t
+  }
+
   function _applyFavicons(text) {
     var keys = root.faviconKeys
     var idx = root._pruneFavicons()
@@ -1099,6 +1136,25 @@ Item {
       idx[keys[n]] = "data:" + mime + ";base64," + lines[i].substring(tab2 + 1)
     }
     root.faviconIndex = idx
+    root.faviconTries = root._pruneFaviconTries()
+    root._armFaviconRetry()
+  }
+
+  // Arm the second look only while there is something left to look for: a title
+  // on screen, with no answer, that has not yet spent its attempts. Once every
+  // live title is either answered or spent this arms nothing, so the retry
+  // terminates instead of turning into a poll.
+  function _armFaviconRetry() {
+    var live = root.faviconLive
+    for (var k = 0; k < live.length; k++) {
+      if (typeof root.faviconIndex[live[k]] === "string") continue
+      var n = root.faviconTries[live[k]]
+      if ((typeof n === "number" ? n : 0) < root.faviconMaxTries) {
+        faviconRetry.restart()
+        return
+      }
+    }
+    faviconRetry.stop()
   }
 
   function _sameKeys(a, b) {
@@ -1150,26 +1206,56 @@ Item {
       if (!faviconDiscover.running) faviconDiscover.running = true
       return
     }
-    // Every title on screen is already the subject of the last query, so the
-    // answer cannot have changed. This is what keeps ordinary browsing free:
-    // windowtitle fires on every page load and this refresh hangs off the same
-    // debounce, so without it each one would cost a process.
-    if (root._sameKeys(keys, root.faviconLive)) return
+    // Every title on screen is already the subject of the last query, and the
+    // TITLE cannot have changed -- it IS the key, so a page that becomes
+    // something else becomes a different key. This is what keeps ordinary
+    // browsing free: windowtitle fires on every page load and this refresh
+    // hangs off the same debounce, so without it each one would cost a process.
+    //
+    // What an unchanged title does NOT settle is whether the ANSWER is
+    // unchanged, which is what this guard was read as saying for as long as it
+    // stood alone. The answer comes out of a database the browser writes on its
+    // own schedule -- ~10s behind the navigation -- so the first look at a page
+    // you just opened misses and a look a few seconds later hits. faviconRetry
+    // is that second look, and faviconRetryDue is how it gets past here. A
+    // window event still cannot, which is the point.
+    var retry = root.faviconRetryDue
+    root.faviconRetryDue = false
+    if (root._sameKeys(keys, root.faviconLive) && !retry) return
     root.faviconLive = keys
 
-    // Ask only about what has no answer yet. Everything else is already correct
-    // by construction -- see faviconKeys.
+    // Ask only about what has no answer yet AND has attempts left. Anything
+    // answered is already correct by construction -- see faviconKeys -- and
+    // anything out of attempts is a page this cannot resolve at all, which is a
+    // state to stop paying for rather than one to keep testing.
     var ask = []
-    for (var n = 0; n < keys.length; n++)
-      if (typeof root.faviconIndex[keys[n]] !== "string") ask.push(keys[n])
+    for (var n = 0; n < keys.length; n++) {
+      if (typeof root.faviconIndex[keys[n]] === "string") continue
+      var tried = root.faviconTries[keys[n]]
+      if ((typeof tried === "number" ? tried : 0) >= root.faviconMaxTries) continue
+      ask.push(keys[n])
+    }
     if (ask.length === 0) {
-      // The set changed but every title in it is already answered -- a window
-      // closed, or navigated back to a page seen earlier. Prune to the new set
-      // without spending a process on it.
+      // Nothing worth a process: every title here is either answered or spent.
+      // Prune to the new set -- a window closed, or navigated back to a page
+      // seen earlier -- and let _armFaviconRetry decide whether to come back.
       root.faviconKeys = []
       root.faviconIndex = root._pruneFavicons()
+      root.faviconTries = root._pruneFaviconTries()
+      root._armFaviconRetry()
       return
     }
+    // Counted at ASK time rather than at failure time, because a query that
+    // never answers at all -- no python3, a helper that died on start -- has to
+    // count too or it would retry for ever. Rebuilt from `keys` rather than
+    // mutated, which prunes it to the live set in the same pass.
+    var tries = ({})
+    for (var t = 0; t < keys.length; t++) {
+      var was = root.faviconTries[keys[t]]
+      tries[keys[t]] = (typeof was === "number" ? was : 0)
+    }
+    for (var a = 0; a < ask.length; a++) tries[ask[a]] = tries[ask[a]] + 1
+    root.faviconTries = tries
     root.faviconKeys = ask
 
     // python3 rather than the sqlite3 CLI, although the CLI starts in 1ms
@@ -1430,6 +1516,32 @@ Item {
     interval: 400
     repeat: false
     onTriggered: root._refreshFavicons()
+  }
+
+  // The second look -- and the reason a badge appears at all on a page you have
+  // only just opened.
+  //
+  // A browser does not write a visit to its history database when it happens.
+  // Chromium batches and commits 10.07s later: measured against a throwaway
+  // profile, navigation driven over DevTools, polling the DB exactly as
+  // favicons.py opens it. The lookup above runs ~464ms after a title settles --
+  // 24ms of refreshDebounce, 40ms of rebuildAfterRefresh, 400ms of the debounce
+  // -- so the page in front of you is invisible to that query by construction,
+  // every single time.
+  //
+  // On its own that would be a transient miss. What made it PERMANENT was the
+  // unchanged-key-set guard in _refreshFavicons: the title on screen does not
+  // change, so the key set does not change, so nothing ever asked again.
+  // Measured on a real profile, 70% of navigations were to a URL with no prior
+  // visit -- so most pages silently never got a badge for the life of that
+  // window on them, which is exactly what this read as in use.
+  //
+  // 12s rather than 10.1: a retry landing ON the commit races it.
+  Timer {
+    id: faviconRetry
+    interval: 12000
+    repeat: false
+    onTriggered: { root.faviconRetryDue = true; root._refreshFavicons() }
   }
 
   Connections {

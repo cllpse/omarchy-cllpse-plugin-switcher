@@ -25,10 +25,12 @@ Why a helper at all, and why this shape:
     DataStream, IpcHandler, JsonAdapter, StdioCollector, SplitParser), and
     QtQuick.LocalStorage only opens a database keyed by an md5 of a NAME, under
     the engine's own path, read-write. Neither can be pointed at a profile.
-  * It is read-only throughout: the URIs carry mode=ro and immutable=1, which
-    opens O_RDONLY, takes no lock, and writes nothing -- not even a journal --
-    so it cannot disturb a running browser. The cost of immutable=1 is that a
-    read racing a write can come back inconsistent; that lands as a miss, which
+  * It is read-only throughout, and it writes nothing into a browser profile:
+    no database, no journal, no WAL, and not even the read-mark an ordinary
+    read-only SQLite connection puts in a -shm. Which URI does that depends on
+    whether a browser currently has the file open; see ro(), which is where
+    every measurement behind the choice lives. The residual cost is that a read
+    racing a write can come back inconsistent, and that lands as a miss, which
     is already a state this handles.
   * It reads ONLY the titles it was handed. It never enumerates history, and
     nothing it reads is written anywhere: the image goes back over stdout as
@@ -118,10 +120,16 @@ def discover():
       * Only HIDDEN top-level directories of $HOME are entered. Every browser
         profile on Linux lives under one, and the visible half of a home
         directory is where the large trees are.
-      * Depth 2 below each. That reaches .config/chromium/Default and
-        .mozilla/firefox/x.default, which is every native install. A flatpak
-        profile at .var/app/<id>/.mozilla/firefox/x sits deeper and is missed;
-        depth 4 finds it and costs 4x, which is not a trade to make silently.
+      * Depth 3 below each. Depth 2 reaches .config/chromium/Default and
+        .mozilla/firefox/x.default and stops one level short of Brave, whose
+        profile is .config/BraveSoftware/Brave-Browser/Default -- a browser
+        the table above has always covered and this sweep had never once
+        found. Measured on a real $HOME: depth 2 is 12.8ms, depth 3 is 31.3ms,
+        depth 4 is 66.2ms, all of it paid ONCE per session and only on first
+        sight of a browser window. A flatpak profile at
+        .var/app/<id>/.mozilla/firefox/x sits at depth 4 and is still missed
+        -- that one stays a deliberate stop, since the cost doubles again for
+        a layout no native install uses.
 
     ONE scandir per directory, reused for both the marker test and the descent
     -- measured at 10.5ms against 23.4ms for the obvious version that stats the
@@ -152,7 +160,7 @@ def discover():
         return found
     for e in top:
         if e.name.startswith(".") and e.is_dir(follow_symlinks=False):
-            sweep(e.path, 2)
+            sweep(e.path, 3)
     # Most recently written history first, so the profile actually being
     # browsed in answers before a stale one. A miss there falls through to the
     # next, so the order is a preference rather than a decision.
@@ -162,7 +170,60 @@ def discover():
 
 
 def ro(path):
-    return sqlite3.connect("file:" + path + "?mode=ro&immutable=1", uri=True)
+    """Open one profile database read-only, writing nothing to the profile.
+
+    Two URIs, picked by one fact on disk, because neither is both correct and
+    safe on its own:
+
+      * `immutable=1` takes NO LOCK whatsoever, which is the only way to read a
+        RUNNING Chromium: it holds History and Favicons with
+        `locking_mode = EXCLUSIVE`, so an ordinary read-only connection gets
+        SQLITE_BUSY and nothing else. Measured against the live profile --
+        `immutable=1` reads it in 0.56ms, plain `mode=ro` fails outright. What
+        it cannot do is read a WAL: it ignores the -wal by design, so against
+        Firefox it returns the database as of the last CHECKPOINT and silently
+        misses everything since. Measured against a live writer: 1 row of 399.
+
+      * `readonly_shm=1` reads the WAL properly and -- unlike a bare `mode=ro`
+        -- never registers a read-mark in the -shm, so it writes nothing at
+        all. Measured on two freshly-built databases each with its own live
+        writer: `mode=ro` changed the -shm, `mode=ro&readonly_shm=1` left every
+        byte of it alone, and both saw all 399 rows.
+
+    The fact that chooses between them is the -shm, which exists exactly while
+    some process has the database open -- which is exactly when a WAL can hold
+    rows the main file does not. It is a PRECONDITION rather than a preference:
+    with no -shm, `readonly_shm=1` cannot open the database at all, and if
+    there is no -wal either it creates a zero-byte one in the profile before
+    failing. Gating on the -shm is what keeps this from writing into a browser
+    profile in the one case where it otherwise would.
+
+    `timeout=0` is load-bearing too. Python's default is a five SECOND busy
+    timeout and the locked-Chromium path above walks straight into it --
+    measured 5008ms against 0.17ms. A five-second stall in a process the shell
+    spawns while drawing a window strip is not a failure mode worth having.
+
+    The probe query is what makes the fallback real, since a lock surfaces on
+    the first read rather than on connect. It costs 0.05ms.
+
+    `readonly_shm` belongs to SQLite's unix VFS rather than to the six
+    parameters in the URI documentation, and an SQLite that does not recognise
+    it ignores it silently -- leaving a plain `mode=ro`, which still reads
+    correctly but does register that read-mark. Verified honoured on 3.53.4 by
+    the A/B above; re-run it before trusting the no-write claim on an older one.
+    """
+    if os.path.exists(path + "-shm"):
+        con = None
+        try:
+            con = sqlite3.connect("file:" + path + "?mode=ro&readonly_shm=1",
+                                  uri=True, timeout=0)
+            con.execute("select 1 from sqlite_master limit 1").fetchone()
+            return con
+        except sqlite3.Error:
+            if con is not None:
+                con.close()
+    return sqlite3.connect("file:" + path + "?mode=ro&immutable=1",
+                           uri=True, timeout=0)
 
 
 def like_escape(s):

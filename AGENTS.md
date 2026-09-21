@@ -163,11 +163,29 @@ soft — Chromium caches nothing above 32px and the badge draws at 36 device px.
 database.** Three rules keep that defensible, and each is a real limit on what
 may be changed here:
 
-- **Read-only, permanently.** Both databases open `mode=ro&immutable=1` —
-  `O_RDONLY`, no lock, no journal, no writes — against files a running browser
-  owns. A change needing a lock, a copy or a writable handle is the wrong
-  change. The cost is that a read racing a write can be inconsistent, which
-  lands as a miss, already a handled state.
+- **Read-only, permanently, and it writes nothing into a profile.** Not the
+  database, not a journal, not a WAL, and not the read-mark an ordinary
+  read-only SQLite connection leaves in a `-shm`. A change needing a lock, a
+  copy or a writable handle is the wrong change. The cost is that a read racing
+  a write can be inconsistent, which lands as a miss, already a handled state.
+
+  Two URIs get there and `ro()` picks between them on one fact — whether a
+  `-shm` exists beside the database, i.e. whether some process has it open.
+  **Neither URI is safe alone, so do not simplify this to one.**
+  `immutable=1` takes no lock, which is the only way to read a **running
+  Chromium** (it holds History and Favicons `locking_mode = EXCLUSIVE`;
+  measured, a plain `mode=ro` gets SQLITE_BUSY and nothing else) — but it
+  ignores the `-wal` by design, so on **Firefox** it silently returns the
+  database as of the last checkpoint: 1 row of 399 against a live writer.
+  `readonly_shm=1` reads the WAL and, unlike a bare `mode=ro`, leaves the
+  `-shm` byte-identical. It is gated on the `-shm` rather than preferred,
+  because with none present it cannot open the database at all and — if there
+  is no `-wal` either — **creates a zero-byte one in the profile** before
+  failing. That gate is the only thing standing between this and a write.
+
+  `timeout=0` is part of the same rule: Python's default is a five **second**
+  busy timeout, and the locked-Chromium path walks into it — 5008ms against
+  0.17ms. Never open one of these without it.
 - **Only the titles it is handed.** It must never enumerate history. The
   difference between "reads the page titles of the windows on screen" and
   "reads your browsing history" is the entire reason this is acceptable in a
@@ -188,7 +206,11 @@ a once-per-session scan in `Hud.qml` whose result is passed in with `--profile`
 one it replaced — 31.2ms against 25.6), and the
 QML asks only about titles it has **no answer for** (safe because the title is
 the key, and necessary because `urls.title` has no index: 5.2ms per title at
-100k rows). Not worth doing: C-module imports (`posix`, `binascii`, `_sqlite3`)
+100k rows). The one place that frugality is deliberately relaxed is the retry:
+a browser commits a visit ~10s after the navigation (measured 10.07s on
+Chromium — it is `kCommitIntervalSeconds`), so a title gets up to three looks
+12s apart before being given up on. Without it the first look is the only look
+and it always misses, which is what made most pages carry no badge at all. Not worth doing: C-module imports (`posix`, `binascii`, `_sqlite3`)
 save 2.1ms for private APIs; the `sqlite3` CLI starts in 1ms but cannot bind a
 parameter; a persistent helper answers in 0.40ms but costs 13.8MB resident.
 

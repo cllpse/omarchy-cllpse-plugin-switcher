@@ -226,8 +226,23 @@ Item {
       // no process to spawn and nothing to wait for. The rebuild below only
       // does real work on the very first summon; after that _rebuild() finds
       // the list unchanged and leaves the model alone.
+      //
+      // It is also the only thing that notices a refresh which landed WITHOUT
+      // firing valuesChanged -- the shape _rebuild()'s own comment describes --
+      // so the list can turn out to be ready right here, with earlier presses
+      // already queued behind it. Hence pendingSteps below rather than step
+      // alone: a double-tap whose refresh landed between the two presses has to
+      // arrive as two steps, the same as one whose refresh had not landed yet.
       if (!root.listLoaded) root._rebuild()
-      if (root.listLoaded && root.wins.length >= 2) { root._openStepped(step); return }
+      if (root.listLoaded && root.wins.length >= 2) {
+        root._openStepped(root.pendingSteps + step) // _openStepped clears the queue
+        // Both latches belong to the cold path that is now over. A commit
+        // queued by an earlier gesture is stale -- this press starts a new one
+        // -- and leaving listPending set would strand it true for the session.
+        root.pendingCommit = false
+        root.listPending = false
+        return
+      }
       // Cold: nothing cached yet (first summon after a shell restart, or a
       // refresh still in flight). Remember the presses and let _rebuild()
       // apply them the moment the list lands, exactly as before.
@@ -1498,7 +1513,7 @@ Item {
     id: rebuildAfterRefresh
     interval: 40
     repeat: false
-    onTriggered: root._rebuild()
+    onTriggered: root._rebuild(false, true)
   }
 
   // Favicons are looked up on the same signal the window list is, one step
@@ -1546,7 +1561,7 @@ Item {
 
   Connections {
     target: Hyprland.toplevels
-    function onValuesChanged() { root._rebuild() }
+    function onValuesChanged() { root._rebuild(false, true) }
   }
 
   // Focus history. Only shifts when the focused window actually changes, so
@@ -1572,7 +1587,7 @@ Item {
     return t.indexOf("0x") === 0 ? t.substring(2) : t
   }
 
-  function _rebuild(force) {
+  function _rebuild(force, fromRefresh) {
     // Ahead of the freeze below, on purpose. The MODEL is frozen while the
     // strip is up, but faviconIndex is a root property the delegates bind
     // through rather than part of the model, so an answer that lands mid-open
@@ -1703,6 +1718,22 @@ Item {
     }
 
     if (!root.listPending) return
+
+    // Only a rebuild the REFRESH scheduled owns the cold-start queue.
+    //
+    // open() also calls _rebuild() synchronously on every press while the list
+    // is still cold, to catch a refresh that landed silently. That probe runs
+    // BEFORE the press it was called for is added to pendingSteps, so letting
+    // it fall through here cleared the presses already queued -- listPending is
+    // true by then, so the guard above no longer stops it -- and a double-tap
+    // inside the ~10ms window arrived as a single step, the exact loss
+    // pendingSteps exists to prevent. Returning also leaves listPending set,
+    // so the press it belongs to does not re-fire a refresh already in flight.
+    //
+    // open() applies the queue itself in the one case this skips: the probe
+    // finding the list ready.
+    if (!fromRefresh) return
+
     root.listPending = false
     // Deliberately NOT marking the list loaded here.
     //

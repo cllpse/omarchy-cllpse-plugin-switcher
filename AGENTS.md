@@ -141,3 +141,56 @@ A name that resolves to nothing draws nothing, and a file that fails to parse is
 skipped silently — in both cases the tile keeps its Nerd Font glyph, with no
 error anywhere. So "no icon appeared" means one of: wrong filename, missing
 alias, malformed SVG, or no restart.
+
+## Favicons are not icons, and nothing above applies to them
+
+A browser tile's badge is the site's favicon, pulled from the browser's own
+profile by [`favicons.py`](favicons.py). It shares the corner slot and the
+draw-it-as-it-comes rule with a process icon and **nothing else in this
+document**: it comes from a database rather than a file, it is never on disk
+(it reaches QML as a `data:` URL), it has no name to alias, and there is no
+`viewBox` to scale. Do not add one to `icons/`. Do not "fix" one that looks
+soft — Chromium caches nothing above 32px and the badge draws at 36 device px.
+
+**The constraint that matters more than any other: this reads a browsing-history
+database.** Three rules keep that defensible, and each is a real limit on what
+may be changed here:
+
+- **Read-only, permanently.** Both databases open `mode=ro&immutable=1` —
+  `O_RDONLY`, no lock, no journal, no writes — against files a running browser
+  owns. A change needing a lock, a copy or a writable handle is the wrong
+  change. The cost is that a read racing a write can be inconsistent, which
+  lands as a miss, already a handled state.
+- **Only the titles it is handed.** It must never enumerate history. The
+  difference between "reads the page titles of the windows on screen" and
+  "reads your browsing history" is the entire reason this is acceptable in a
+  plugin, and only this code keeps the two apart.
+- **Every value is a bound parameter.** They all originate in a window title,
+  which is a string a remote web page chose.
+
+**Adding a browser is a row in `FAMILIES`** — two filenames that identify a
+profile, and two queries. Discovery finds profiles by those filenames, so no
+browser is named anywhere else and every fork works for free. An `if family ==`
+branch below that table is what this design exists to avoid.
+
+**On performance, since the obvious answers are wrong.** A query is ~17ms and
+the SQL in it is 0.43ms; the rest is Python starting. Already done: `-S`,
+`import glob` removed (7.5ms), the profile sweep hoisted out of the query into
+a once-per-session scan in `Hud.qml` whose result is passed in with `--profile`
+(leaving it per-query made the generic version *slower* than the Chromium-only
+one it replaced — 31.2ms against 25.6), and the
+QML asks only about titles it has **no answer for** (safe because the title is
+the key, and necessary because `urls.title` has no index: 5.2ms per title at
+100k rows). Not worth doing: C-module imports (`posix`, `binascii`, `_sqlite3`)
+save 2.1ms for private APIs; the `sqlite3` CLI starts in 1ms but cannot bind a
+parameter; a persistent helper answers in 0.40ms but costs 13.8MB resident.
+
+That sweep is started on **first sight of a browser window**, not in
+`Component.onCompleted` like the other three scans: a session with no browser
+open then never pays the 28ms, and never has its home directory walked at all.
+Activating the switcher spawns nothing — a lookup is triggered by a page title
+changing.
+
+Everything degrades to silence — no profile, no `sqlite3` module, a locked
+database, an unparseable row. Empty stdout means every tile keeps the icon it
+would have had.

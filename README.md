@@ -18,12 +18,18 @@ one onto another workspace to move it there.
   between any two. Dropping on a tile's own group re-arranges it in place.
 - **A terminal tile shows what is running in it** — a Claude session, a diff
   viewer, `btop` — as a small icon over the terminal's own.
+- **A browser tile shows the favicon of the site it is on**, in that same
+  corner, so four browser windows are told apart by where they are rather than
+  by reading four truncated titles.
 
 ## Requirements
 
 - Omarchy 4 (Quattro) and its Quickshell-based shell
 - Hyprland, for `hyprctl` and the global-shortcuts protocol
 - A Nerd Font as the shell's menu font, for the tile glyphs
+- For site favicons only: `python3` with its `sqlite3` module (on Arch that is
+  the `sqlite` package, an optional dependency of `python`). Without it every
+  browser tile simply keeps its own icon and nothing else changes.
 
 ## Install
 
@@ -174,6 +180,49 @@ One caveat, since the file is tracked: `omarchy plugin update` pulls this
 repository, so local edits can conflict. `git checkout icon-aliases.json`
 inside the plugin directory takes the shipped version back if that happens.
 
+## Site favicons
+
+A browser tile carries the favicon of the site it is showing, in the corner slot
+a terminal's process icon uses.
+
+> **This gives the switcher read access to your browsing history database.**
+> There is no way to do this without it. A browser window exposes no URL — not
+> in its class, not in its title, not on the Wayland handle — so the only way
+> to know which site it is on is the page title, joined against the browser's
+> own history. The favicon then comes from the browser's favicon cache. Both
+> are SQLite files in your profile, which is why the plugin ships
+> [`favicons.py`](favicons.py); QML cannot read them.
+>
+> What it does with that access: opens both databases `mode=ro&immutable=1`
+> (`O_RDONLY`, no lock, no journal, no writes), looks up **only the page titles
+> currently on screen**, and returns an image over a pipe. It never enumerates
+> history and writes nothing anywhere, and with no browser window open it does
+> not run at all — not even the sweep that looks for profiles. But the access
+> is broader than the use, and only the code keeps it narrow: if you would
+> rather not grant it, delete `favicons.py` and browser tiles fall back to
+> their own icon.
+
+**Which browsers.** Both families, found by the two database files in a
+profile rather than by name — `History`+`Favicons` for Chromium, Chrome, Brave,
+Vivaldi, Edge, Helium; `places.sqlite`+`favicons.sqlite` for Firefox, LibreWolf,
+Zen, Waterfox, Floorp. That is the only browser-specific knowledge in the file:
+a table of two rows, four strings each. A third family is a row, not a code
+path. Flatpak profiles sit deeper than the sweep goes and are not found.
+
+**What it cannot do**, each ending as no badge rather than a wrong one: a page
+never visited before, an incognito window, a local file or a `chrome://` page,
+and a fork whose title suffix is unknown. Installed web apps are excluded on
+purpose — their class already carries the host, so the tile is already the
+site's icon.
+
+**Accuracy is a property of your history.** Over the 200 most recent pages in
+the profile this was built against, every one resolved and 145 resolved the
+byte-identical icon the true URL would have; the 55 that differed were one
+session of CDN-hosted images sharing titles with their origin site, where the
+origin's mark is the better answer. Unread-count prefixes (`(12) Inbox`) are
+stripped on both sides. Firefox is verified against a reconstructed profile,
+not a real one.
+
 ## Theming
 
 The card binds the active theme's menu colours and Hyprland's `decoration:rounding`,
@@ -190,7 +239,13 @@ from a theme's `[spacing]` section if you want them different:
 
 - The plugin runs inside the existing Omarchy shell process and starts no
   Quickshell of its own. It shells out to `hyprctl` to focus and move windows,
-  and once at startup to index your icon themes.
+  once at startup to index your icon themes, once on first sight of a browser
+  window to find profiles, and to `favicons.py` when a browser page title it has
+  no answer for appears. **Opening the strip spawns nothing** — a lookup is
+  triggered by a page title changing, not by activation, and is skipped when
+  every title on screen already has an answer. Profiles are found once per
+  session (28ms) and cached for it; a lookup is ~17ms, of which under half a
+  millisecond is the query and the rest is Python starting.
 - Windows on special workspaces (the scratchpad) are deliberately not listed.
 - Live edits inside a plugin directory may not auto-reload; run
   `omarchy-restart-shell` after changing files here.

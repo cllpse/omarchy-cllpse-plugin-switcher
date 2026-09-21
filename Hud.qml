@@ -798,11 +798,19 @@ Item {
       || c.indexOf("konsole") !== -1 || c.indexOf("terminal") !== -1
   }
 
-  // The icon for whatever is running in this terminal window, or "" for none.
+  // The icon for what this window is showing, or "" for none: the program
+  // running in a terminal, or the favicon of the site in a browser.
+  //
+  // One slot for both because it is one question -- a terminal and a browser
+  // are alike in being a window you keep, whose contents are what you are
+  // actually looking for under SUPER+TAB, and neither one's own mark says
+  // which of four you meant. The badge answers that and the rules are the
+  // same: drawn exactly as it comes, and absent rather than guessed at.
   //
   // Resolved through the SAME indexes a window class goes through, in the same
   // order, so a terminal process icon and an app tile can never disagree about
-  // what a given program looks like.
+  // what a given program looks like. A favicon has no such index -- it comes
+  // from the browser's own cache, see faviconIndex below.
   //
   // Most of these are answered by the vendor sweep or by icons/ here, which is
   // where the CLI and agent marks live. Drawn exactly as the file is, like
@@ -811,6 +819,23 @@ Item {
   // No glyph fallback: at processIcon size a Nerd Font glyph is a smudge, and "no icon
   // for this" is better read as no processIcon than as a mark nobody can identify.
   function processIconFor(cls, title) {
+    // A browser is showing a site rather than running a program. Keyed on the
+    // page title with the browser's own name stripped, which is exactly what
+    // was handed to the helper, so the two cannot disagree about the key.
+    //
+    // A web app is deliberately not included: its class already carries the
+    // host, so iconFor resolves the site's own desktop entry as the TILE icon
+    // and a badge would repeat it.
+    if (root._isBrowser(cls) && !root._webAppEntry(cls)) {
+      var key = root._pageTitle(cls, title)
+      var fav = key.length > 0 ? root.faviconIndex[key] : undefined
+      // typeof, not `!== undefined`: a page really titled "constructor" or
+      // "toString" reads the INHERITED Object.prototype member out of a plain
+      // object, and a function stringified into Image.source is a mess with no
+      // error behind it. Page titles are arbitrary web content, so this one is
+      // reachable in a way the command-name indexes above are not.
+      return (typeof fav === "string") ? fav : ""
+    }
     if (!root._isTerminal(cls)) return ""
     var t = String(title || "").trim()
     if (t.length === 0) return ""
@@ -849,6 +874,317 @@ Item {
     if (v !== undefined) return v
     var own = root.pluginIconIndex[name]
     return own === undefined ? "" : own
+  }
+
+  // ── What a BROWSER window is showing ────────────────────────────────────────
+  //
+  // Same slot as the terminal's process icon and the same reasoning, but the
+  // signal underneath is weaker and it is worth being plain about why.
+  //
+  // A terminal's title IS the command: shell integration writes it, so the
+  // window says what it is running. A browser's title is the PAGE's own title,
+  // chosen by the page, and there is no URL anywhere on the Wayland toplevel --
+  // not in the class, not in the title, not on the handle. So the only join
+  // available is title -> the browser's History DB -> the URL it recorded ->
+  // its Favicons DB. That is two SQLite databases, which QML cannot read, hence
+  // favicons.py; everything about how it reads them is documented there.
+  //
+  // Measured before building it, over the 200 most recently visited pages in
+  // this profile: every one resolved a favicon, 11 of them through an exact
+  // page URL and 189 through another page on the same host. 145 resolved the
+  // identical icon the true URL would have; the 55 that did not were one
+  // session of raw images opened off a CDN, whose titles the origin site shares
+  // -- and there the origin's mark is the more useful answer anyway. Not one
+  // genuine mis-attribution in the sample. Re-measure before trusting that on a
+  // different browsing history.
+  //
+  // What it cannot do, and each of these ends as no badge rather than a wrong
+  // one: a page never visited before in a profile this can find (nothing to
+  // join to), an incognito window (nothing is recorded), a local file or a
+  // chrome:// page (no favicon cached), and Firefox, whose favicons live in a
+  // different schema entirely (places.sqlite / favicons.sqlite) that none of
+  // this reads.
+
+  // Both families. favicons.py carries a row per family rather than a code
+  // path, so what is browser-specific here is only this list of classes and
+  // the title suffixes below -- the lookup itself knows nothing about either.
+  //
+  // "chrome" also matches a web app's chrome-<host>__-Profile_N class; both
+  // callers exclude those explicitly rather than tightening this, since the
+  // class genuinely IS a browser -- it is only that a web app already wears the
+  // site's own icon on the tile.
+  function _isBrowser(cls) {
+    var c = String(cls || "").toLowerCase()
+    return c.indexOf("chromium") !== -1 || c.indexOf("chrome") !== -1
+      || c.indexOf("brave") !== -1 || c.indexOf("vivaldi") !== -1
+      || c.indexOf("edge") !== -1 || c.indexOf("helium") !== -1
+      || c.indexOf("opera") !== -1
+      || c.indexOf("firefox") !== -1 || c.indexOf("librewolf") !== -1
+      || c.indexOf("waterfox") !== -1 || c.indexOf("floorp") !== -1
+      || c.indexOf("zen") !== -1
+  }
+
+  // Product names a browser appends to its window title, longest first.
+  //
+  // Order is load-bearing: " - Chrome" is a suffix of " - Google Chrome", so
+  // testing the short one first would turn "Docs - Google Chrome" into
+  // "Docs - Google" and the lookup would find nothing. Same for Edge, and for
+  // "Mozilla Firefox" against "Mozilla Firefox Private Browsing".
+  readonly property var browserTitleSuffixes: [
+    "Mozilla Firefox Private Browsing", "Google Chrome", "Microsoft Edge",
+    "Mozilla Firefox", "Zen Browser", "LibreWolf", "Waterfox", "Chromium",
+    "Vivaldi", "Firefox", "Chrome", "Floorp", "Helium", "Brave", "Opera", "Zen"
+  ]
+
+  // Both separators a browser puts in front of that name. Chromium-family uses
+  // a hyphen, Firefox-family an EM DASH -- written as an escape rather than
+  // literally so it cannot be mangled by an editor or a diff tool, which is a
+  // silent failure here: the suffix would simply never match and every Firefox
+  // tile would look up a title that has a browser name glued to the end of it.
+  readonly property var browserTitleSeparators: [" - ", " \u2014 "]
+
+  // The page's own title: the window title with the browser's name taken off.
+  //
+  // This is the lookup key on both sides -- it is what goes to favicons.py and
+  // what comes back keyed by -- so the two cannot drift. A fork not in the list
+  // above keeps its suffix, matches no history row and simply gets no badge,
+  // which is the same outcome as any other miss.
+  function _pageTitle(cls, title) {
+    var t = String(title || "").trim()
+    if (t.length === 0) return ""
+    for (var i = 0; i < root.browserTitleSuffixes.length; i++) {
+      for (var j = 0; j < root.browserTitleSeparators.length; j++) {
+        var suf = root.browserTitleSeparators[j] + root.browserTitleSuffixes[i]
+        if (t.length > suf.length && t.substring(t.length - suf.length) === suf)
+          return t.substring(0, t.length - suf.length).trim()
+      }
+    }
+    return t
+  }
+
+  // Page title -> a data: URL holding the favicon PNG.
+  //
+  // data:, not a file. QML's Image takes one -- verified against a file:// URL
+  // of the same bytes, both reaching Image.Ready at the same sourceSize -- so
+  // the PNG never touches the disk and this plugin still writes nothing.
+  //
+  // Pruned to what is on screen on every refresh, so it is bounded by the
+  // number of browser windows open rather than growing with everywhere you
+  // have been this session.
+  property var faviconIndex: ({})
+
+  // The keys of the query in flight, in the order they were passed. favicons.py
+  // answers by INDEX rather than by echoing the title back, so a tab or any
+  // other separator inside a page title cannot break the parse.
+  //
+  // Only the keys with no answer yet, which is not the same set as what is on
+  // screen -- hence faviconLive beside it. A title that already resolved cannot
+  // have changed, because the title IS the key: a page that becomes something
+  // else becomes a different key. So re-asking about it buys nothing, and at
+  // scale it is the expensive half: `urls.title` carries no index in Chromium's
+  // schema, so every lookup is a full table scan -- measured 0.02ms at this
+  // profile's 730 rows, but 5.2ms at 100k and 25.5ms at 500k, per title.
+  property var faviconKeys: []
+
+  // Every browser page title on screen. The index is pruned to this, so it
+  // stays bounded by the number of browser windows open rather than growing
+  // with everywhere you have been this session.
+  property var faviconLive: []
+
+  // Browser profiles, swept once per session -- the fourth index scan in this
+  // file, and for the same reason as the other three: it is a walk of the
+  // filesystem whose answer does not change while the shell runs.
+  //
+  // Unlike the other three it is NOT started in Component.onCompleted, but on
+  // first sight of a browser window; see _refreshFavicons.
+  //
+  // It has to be a sweep rather than a list of browsers, or every fork would
+  // need a line here; favicons.py identifies a profile by the two database
+  // files in it instead. That costs 10.5ms, which is why it is paid ONCE.
+  // Leaving it in the per-query path was the version before this and it was
+  // the second-largest cost in a run whose actual SQL is 0.43ms.
+  //
+  // A browser installed after the shell started is not found until a restart,
+  // which is the same contract the icon index already has.
+  property var faviconProfiles: []
+
+  // Whether the sweep has RUN, which is not the same as whether it found
+  // anything: a machine with no browser installed must sweep once and never
+  // again, not once per title change.
+  property bool faviconSwept: false
+
+  Process {
+    id: faviconDiscover
+    command: ["python3", "-S", root.pluginRoot + "favicons.py", "--discover"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root._applyFaviconProfiles(text)
+    }
+  }
+
+  function _applyFaviconProfiles(text) {
+    var out = []
+    var lines = String(text || "").split("\n")
+    for (var i = 0; i < lines.length; i++) {
+      var tab = lines[i].indexOf("\t")
+      if (tab <= 0) continue
+      out.push("--profile")
+      out.push(lines[i].substring(0, tab))
+      out.push(lines[i].substring(tab + 1))
+    }
+    root.faviconProfiles = out
+    root.faviconSwept = true
+    if (out.length === 0) return
+    // A refresh can have run and missed while this sweep was still in flight --
+    // it would have spawned with no --profile, and the helper's own fallback
+    // discovery is the slow path this exists to avoid. Clearing faviconLive is
+    // what makes the retry actually happen: _refreshFavicons compares the
+    // titles on screen against it and returns early when they match, so
+    // restarting the timer alone would be a no-op. Anything already answered
+    // is still skipped, since the retry only asks about what has no answer.
+    root.faviconLive = []
+    faviconDebounce.restart()
+  }
+
+  Process {
+    id: faviconProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root._applyFavicons(text)
+    }
+  }
+
+  // Everything still on SCREEN, and nothing else.
+  //
+  // Keyed on faviconLive rather than on what was last asked about: the query
+  // only covers titles with no answer yet, so pruning to it would throw away
+  // every icon already resolved. A title still on screen that momentarily
+  // failed to resolve keeps the icon it had -- re-assigning a tile's Image
+  // source is what makes it flash -- while a window that has navigated away
+  // takes its entry with it.
+  function _pruneFavicons() {
+    var live = root.faviconLive
+    var idx = ({})
+    for (var k = 0; k < live.length; k++) {
+      var prev = root.faviconIndex[live[k]]
+      if (typeof prev === "string") idx[live[k]] = prev
+    }
+    return idx
+  }
+
+  function _applyFavicons(text) {
+    var keys = root.faviconKeys
+    var idx = root._pruneFavicons()
+    var lines = String(text || "").split("\n")
+    for (var i = 0; i < lines.length; i++) {
+      var tab = lines[i].indexOf("\t")
+      if (tab <= 0) continue
+      var tab2 = lines[i].indexOf("\t", tab + 1)
+      if (tab2 <= tab) continue
+      var n = parseInt(lines[i].substring(0, tab), 10)
+      if (!(n >= 0 && n < keys.length)) continue
+      // The media type is sniffed from the blob rather than assumed: Chromium
+      // re-encodes every favicon to PNG, Firefox stores what the site served,
+      // and a data: URL that lies about its type is refused by Qt silently.
+      var mime = lines[i].substring(tab + 1, tab2)
+      // Checked, not trusted, because this file and favicons.py can be
+      // DIFFERENT VERSIONS at runtime: `omarchy plugin update` replaces the
+      // script on disk while this QML stays in the running shell until a
+      // restart, so a field the old parser does not expect ends up spliced
+      // into the URL. Seen for real -- a 2-field parser reading 3-field output
+      // produced `data:image/png;base64,image/png<TAB>iVBOR...` and Qt logged
+      // one "Unsupported image format" per frame. Rejecting the line instead
+      // keeps a version skew silent, which is what every other failure here is.
+      if (!/^[a-z]+\/[a-z0-9.+-]+$/.test(mime)) continue
+      idx[keys[n]] = "data:" + mime + ";base64," + lines[i].substring(tab2 + 1)
+    }
+    root.faviconIndex = idx
+  }
+
+  function _sameKeys(a, b) {
+    if (!a || !b || a.length !== b.length) return false
+    for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+    return true
+  }
+
+  function _refreshFavicons() {
+    // Re-arm rather than drop. The timer has already fired by the time this
+    // runs, so returning outright would leave the badge missing until some
+    // unrelated event happened to restart it -- which on a quiet desktop can
+    // be a long time.
+    if (faviconProc.running) { faviconDebounce.restart(); return }
+    var vs = Hyprland.toplevels.values
+    var keys = []
+    var seen = ({})
+    for (var i = 0; i < vs.length; i++) {
+      var o = vs[i].lastIpcObject
+      if (!o || o.mapped !== true) continue
+      var cls = o["class"] || o.initialClass || ""
+      if (!root._isBrowser(cls) || root._webAppEntry(cls)) continue
+      var k = root._pageTitle(cls, o.title)
+      // `=== 1`, not a truthiness test, for the same reason refreshEvents uses
+      // one: a page titled "constructor" or "toString" would otherwise match
+      // the inherited member and be dropped from every query.
+      if (k.length === 0 || seen[k] === 1) continue
+      seen[k] = 1
+      keys.push(k)
+    }
+    // Nothing to ask about, and nothing to clear either: leaving the index
+    // alone means closing the last browser window does not discard answers a
+    // reopened one would want back.
+    if (keys.length === 0) return
+
+    // Find the browser profiles the first time a browser window is actually
+    // on screen, rather than at launch. Two reasons, and the second is the
+    // better one: a session with no browser open never pays the 28ms sweep,
+    // and -- since that sweep is a walk of the hidden directories of $HOME --
+    // a machine that never opens a browser never has its home directory
+    // examined by this plugin at all.
+    //
+    // Returning here rather than querying without profiles is deliberate: the
+    // helper would fall back to sweeping for itself, per query, which is the
+    // 31ms path this exists to avoid. _applyFaviconProfiles clears faviconLive
+    // and restarts the debounce, so the query runs one cycle later with the
+    // profiles in hand.
+    if (!root.faviconSwept) {
+      if (!faviconDiscover.running) faviconDiscover.running = true
+      return
+    }
+    // Every title on screen is already the subject of the last query, so the
+    // answer cannot have changed. This is what keeps ordinary browsing free:
+    // windowtitle fires on every page load and this refresh hangs off the same
+    // debounce, so without it each one would cost a process.
+    if (root._sameKeys(keys, root.faviconLive)) return
+    root.faviconLive = keys
+
+    // Ask only about what has no answer yet. Everything else is already correct
+    // by construction -- see faviconKeys.
+    var ask = []
+    for (var n = 0; n < keys.length; n++)
+      if (typeof root.faviconIndex[keys[n]] !== "string") ask.push(keys[n])
+    if (ask.length === 0) {
+      // The set changed but every title in it is already answered -- a window
+      // closed, or navigated back to a page seen earlier. Prune to the new set
+      // without spending a process on it.
+      root.faviconKeys = []
+      root.faviconIndex = root._pruneFavicons()
+      return
+    }
+    root.faviconKeys = ask
+
+    // python3 rather than the sqlite3 CLI, although the CLI starts in 1ms
+    // against python's 8 and this build's base64() would remove the encoding
+    // step: the CLI has no way to BIND a value, so every window title -- which
+    // is a string a remote web page chose -- would have to be escaped into SQL
+    // text by hand, in a shell whose `writefile()` is one quote away. Not a
+    // trade worth 7ms.
+    //
+    // `-S` skips the `site` module, which halves interpreter startup here
+    // (16ms -> 8ms) and costs nothing: everything favicons.py imports is
+    // stdlib, so it never needed site-packages on sys.path.
+    faviconProc.command = ["python3", "-S", root.pluginRoot + "favicons.py"]
+      .concat(root.faviconProfiles).concat(["--"]).concat(ask)
+    faviconProc.running = true
   }
 
   // Friendly app name for the class, shown ahead of the window title as
@@ -1079,6 +1415,23 @@ Item {
     onTriggered: root._rebuild()
   }
 
+  // Favicons are looked up on the same signal the window list is, one step
+  // slower. A page load changes the title two or three times before it settles
+  // -- a bare host, then the real title -- and each one reaches this; 400ms is
+  // long enough that only the settled title is ever asked about, and short
+  // enough that the answer is waiting before the strip is next opened.
+  //
+  // Deliberately NOT hung off open(): a lookup there would land after the tiles
+  // were already on screen and the icon would pop in. Keeping the index warm
+  // instead means the common case -- a window whose page has not changed since
+  // the last time -- draws its badge in the first frame.
+  Timer {
+    id: faviconDebounce
+    interval: 400
+    repeat: false
+    onTriggered: root._refreshFavicons()
+  }
+
   Connections {
     target: Hyprland.toplevels
     function onValuesChanged() { root._rebuild() }
@@ -1108,6 +1461,12 @@ Item {
   }
 
   function _rebuild(force) {
+    // Ahead of the freeze below, on purpose. The MODEL is frozen while the
+    // strip is up, but faviconIndex is a root property the delegates bind
+    // through rather than part of the model, so an answer that lands mid-open
+    // reaches the tile without reshuffling anything.
+    faviconDebounce.restart()
+
     // Frozen while the strip is on screen: a macOS Cmd-Tab list does not
     // reshuffle under the hand holding it, and re-assigning the model mid-open
     // is exactly what made the icons flicker.

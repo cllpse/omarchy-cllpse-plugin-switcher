@@ -900,10 +900,10 @@ Item {
   //
   // What it cannot do, and each of these ends as no badge rather than a wrong
   // one: a page never visited before in a profile this can find (nothing to
-  // join to), an incognito window (nothing is recorded), a local file or a
-  // chrome:// page (no favicon cached), and Firefox, whose favicons live in a
-  // different schema entirely (places.sqlite / favicons.sqlite) that none of
-  // this reads.
+  // join to), an incognito window (nothing is recorded), and a local file or a
+  // chrome:// page (no favicon cached). Firefox used to be on this list, and is
+  // not: favicons.py carries a row for it, reading the places.sqlite /
+  // favicons.sqlite schema the way it reads Chromium's History / Favicons.
 
   // Both families. favicons.py carries a row per family rather than a code
   // path, so what is browser-specific here is only this list of classes and

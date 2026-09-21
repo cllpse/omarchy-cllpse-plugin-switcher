@@ -34,7 +34,7 @@ one onto another workspace to move it there.
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/cllpse/omarchy-window-switcher.git --enable
+omarchy plugin add https://github.com/cllpse/omarchy-cllpse-plugin-switcher.git --enable
 ```
 
 **Then install the keybinds — the plugin does nothing without them.** It has no

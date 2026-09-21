@@ -6,8 +6,8 @@
   "author": "cllpse",
   "license": "MIT",
   "description": "A macOS-style window switcher: hold SUPER and tap TAB to cycle a horizontal strip of open windows, click one to focus it, or drag one onto another workspace to move it there.",
-  "homepage": "https://github.com/cllpse/omarchy-window-switcher",
-  "repository": "https://github.com/cllpse/omarchy-window-switcher",
+  "homepage": "https://github.com/cllpse/omarchy-cllpse-plugin-switcher",
+  "repository": "https://github.com/cllpse/omarchy-cllpse-plugin-switcher",
   "kinds": [
     "panel"
   ],

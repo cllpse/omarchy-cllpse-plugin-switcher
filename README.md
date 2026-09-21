@@ -107,7 +107,7 @@ compositor-side can say which process belongs to which window. Shell integration
 sets the title to the command as typed, which is the better signal anyway.
 
 Icons are resolved by name against your installed icon themes, and the plugin
-ships [75 of its own](icons) — app marks and CLI/agent logos, including
+ships [99 of its own](icons) — app marks and CLI/agent logos, including
 Ghostty's — so both the tiles and the process icons do something out of the box.
 Those resolve **last**, after your own and after every installed theme, so they
 only ever fill a gap. A program with no icon anywhere simply gets none. Claude

@@ -1,6 +1,13 @@
 # Working on the icons
 
-`icons/` holds 75 marks — app icons and CLI/agent logos, including Ghostty's own.
+`icons/` holds 99 marks — app icons and CLI/agent logos, including Ghostty's own.
+
+**Five are theme-dependent and it is known.** `cups`, `gh`, `grok` and `jq` are
+near-black and barely register on a dark card; `mise` is near-white and barely
+registers on a light one. They were authored as silhouettes for a surface that
+repaints them, and nothing here recolours. Measured, not guessed: compositing
+each over #1E1E1E and #FFFFFF shifts the card by under 0.02. Giving them a
+colour means editing artwork, which is a decision, not a fix.
 `icon-aliases.json` maps a command name to an icon name when the two differ.
 
 **An icon is the source of truth for its own appearance.** The plugin draws it

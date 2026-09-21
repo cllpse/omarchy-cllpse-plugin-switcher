@@ -154,14 +154,13 @@ remove that line.
 entry's `Icon=` value rather than for a command, so a Claude session's mark is
 `claude-code.svg` and `claude` has to be pointed at it.
 
-All 15 shipped entries, which is the whole file:
+All 14 shipped entries, which is the whole file:
 
 | title | resolves to | why |
 |---|---|---|
 | `diff`, `log` | `hunk` | shell aliases to the `hunk` diff viewer |
 | `dash` | `gh` | alias to `gh dash` |
 | `edit` | `msedit` | tool alias |
-| `ls` | `lsd` | tool alias |
 | `claude` | `claude-code` | named for the desktop entry, not the command |
 | `convert`, `magick` | `imagemagick` | same |
 | `ffprobe` | `ffmpeg` | same |

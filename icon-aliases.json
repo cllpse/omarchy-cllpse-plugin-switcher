@@ -3,7 +3,6 @@
   "log": "hunk",
   "dash": "gh",
   "edit": "msedit",
-  "ls": "lsd",
 
   "claude": "claude-code",
   "node": "nodejs",

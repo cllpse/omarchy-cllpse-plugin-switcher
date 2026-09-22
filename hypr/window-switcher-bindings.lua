@@ -1,7 +1,10 @@
 -- Window Switcher (cllpse.window-switcher) -- keybinds.
 --
--- REQUIRED. The plugin has no input of its own: it registers global shortcuts
--- and waits. Without this file it loads, sits there, and nothing can open it.
+-- STRONGLY RECOMMENDED. This is the whole keyboard half: the plugin registers
+-- global shortcuts and waits for the compositor to send them, so without this
+-- file no key reaches it. It is no longer the only way in -- the left-edge
+-- pointer trigger in Hud.qml is the plugin's own input and needs no config --
+-- but without this there is no SUPER+TAB.
 --
 -- Append the contents of this file to ~/.config/hypr/bindings.lua.
 

@@ -2,8 +2,9 @@
 
 A macOS-style window switcher for the [Omarchy](https://omarchy.org) 4
 (Quickshell) shell. Hold `SUPER`, tap `TAB` to cycle a horizontal strip of open
-windows, release to focus the highlighted one. Click a tile to focus it, or drag
-one onto another workspace to move it there.
+windows, release to focus the highlighted one — or throw the pointer at the left
+edge of the screen and the same strip opens with no key held. Click a tile to
+focus it, or drag one onto another workspace to move it there.
 
 ![The switcher strip](preview.png)
 
@@ -37,8 +38,9 @@ one onto another workspace to move it there.
 omarchy plugin add https://github.com/cllpse/omarchy-cllpse-plugin-switcher.git --enable
 ```
 
-**Then install the keybinds — the plugin does nothing without them.** It has no
-input of its own: it registers three global shortcuts and waits. Append
+**Then install the keybinds.** Without them the only way in is the left screen
+edge (below) — the keyboard half registers three global shortcuts and waits for
+the compositor to send them. Append
 [`hypr/window-switcher-bindings.lua`](hypr/window-switcher-bindings.lua) to
 `~/.config/hypr/bindings.lua`:
 
@@ -84,10 +86,38 @@ writes nothing else: no state files, no edits to `shell.json` beyond the entry
 | `SUPER+TAB` | open the strip / step forward |
 | `SUPER+SHIFT+TAB` | step back |
 | release `SUPER` | focus the highlighted window |
+| pointer to the **left screen edge** | open the strip, no key held |
 | move the pointer | highlight the tile under it |
 | `SUPER` + click a tile | focus that window |
 | `SUPER` + click beside the card | dismiss without switching |
 | `SUPER` + drag a tile | move that window to the workspace you drop on |
+
+Opened from the left edge there is no key to release, so nothing is
+pre-selected: the strip opens on the window you are already in, and a click is
+what chooses. Click a tile to focus it, click beside the card to dismiss. The
+same drag works — hold the pointer down on a tile and drop it on a workspace.
+
+### The left screen edge
+
+A one-pixel layer surface is pinned to the left edge; crossing into it opens the
+strip. Nothing polls — the compositor sends a single pointer-enter event when the
+cursor crosses in, so the trigger costs nothing while you are not touching it.
+A high mouse polling rate does not change that: a rate is reports *while the
+mouse moves*, and a pointer resting against the edge generates no events at all
+(measured at 8000Hz: ~0 events over 32s parked; ~500/s while sliding along it,
+under 4µs of client CPU each).
+
+Hyprland clamps the cursor to the output, so a fast flick cannot overshoot a
+one-pixel target the way it would anywhere else on screen — the edge is what
+makes one pixel enough.
+
+Two things it costs, both deliberate:
+
+- The leftmost pixel column no longer passes clicks through to what is behind
+  it. With Omarchy's default gaps the nearest window edge is 26px in, so what is
+  behind it is the wallpaper.
+- It stands down while a window on the focused workspace is fullscreen, so a
+  video or a game cannot be interrupted by the pointer drifting left.
 
 Dragging shows a caret at the boundary the window would land on. Drop outside
 the card and nothing happens. The strip auto-scrolls when you drag against

@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "cllpse.window-switcher",
   "name": "Window Switcher",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "author": "cllpse",
   "license": "MIT",
-  "description": "A macOS-style window switcher: hold SUPER and tap TAB to cycle a horizontal strip of open windows, or throw the pointer at the left screen edge to open it with no key held. Click a tile to focus it, or drag one onto another workspace to move it there.",
+  "description": "A macOS-style window switcher: hold SUPER and tap TAB to cycle a horizontal strip of open windows, or throw the pointer into any corner of the screen to open it with no key held. Click a tile to focus it, or drag one onto another workspace to move it there.",
   "homepage": "https://github.com/cllpse/omarchy-cllpse-plugin-switcher",
   "repository": "https://github.com/cllpse/omarchy-cllpse-plugin-switcher",
   "kinds": [

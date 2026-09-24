@@ -199,24 +199,26 @@ Item {
 
   // ── Pointer summon geometry ────────────────────────────────────────────────
   //
-  // How wide the left-edge trigger strip is, in logical pixels, and how much of
-  // the HUD's own input region is cut away to leave room for it.
+  // How big each corner trigger is, in logical pixels, and how much of the
+  // HUD's own input region is cut away at each corner to leave room for one.
   //
-  // One pixel is enough because this is an EDGE, not a tripwire drawn somewhere
-  // in the middle of the screen. Hyprland clamps the cursor to the output, so a
-  // flick left cannot overshoot: measured by warping to x = -9999, which lands
-  // at 0, 400 -- inside the strip -- however fast the pointer was travelling.
-  // A one-pixel line anywhere else would be missed by exactly the fast gesture
-  // people use.
-  readonly property int edgeWidth: 1
+  // One pixel SQUARE is enough because a corner is clamped in both axes at
+  // once. Hyprland pins the cursor to the output, so a diagonal throw cannot
+  // overshoot: measured on a 3072 x 1280 logical output, a warp to
+  // (99999, 99999) lands at 3071, 1279 -- inside the bottom-right pixel --
+  // however fast the pointer was travelling, and a warp to (-9999, -9999)
+  // lands at 0, 0. A one-pixel target anywhere else on screen would be missed
+  // by exactly the fast gesture people use.
+  readonly property int cornerSize: 1
 
   // Whether the pointer summon should stand down.
   //
   // A window that has gone fullscreen is the one case where something real is
-  // drawn under the strip -- ordinary windows never reach it, because
-  // gaps_out (24) plus border_size (2) put the nearest window edge at x = 26 --
-  // and it is also the one case where a switcher appearing because the pointer
-  // drifted left is actively unwanted: a video, a game, a presentation.
+  // drawn under a corner -- ordinary windows never reach one, because
+  // gaps_out (24) plus border_size (2) put the nearest window corner at
+  // 26, 26 -- and it is also the one case where a switcher appearing because
+  // the pointer was thrown into a corner is actively unwanted: a video, a
+  // game, a presentation.
   //
   // Read as a function rather than bound as a property on purpose. A binding
   // would depend on hasFullscreen carrying a change notification; a direct read
@@ -225,7 +227,7 @@ Item {
   // already true by the time the matching `fullscreen>>1` raw event ran, while
   // ToplevelManager.activeToplevel.fullscreen still read false and only caught
   // up afterwards.
-  function _edgeBlocked() {
+  function _cornerBlocked() {
     var ws = Hyprland.focusedWorkspace
     return !!(ws && ws.hasFullscreen)
   }
@@ -251,7 +253,7 @@ Item {
       return
     }
 
-    // "show" is the pointer summon (the left-edge strip below). It is a step
+    // "show" is the pointer summon (the corner surfaces below). It is a step
     // of ZERO rather than a fourth code path: _openStepped(0) takes the k <= 0
     // branch and lands on _activeIndex(), so the strip opens with the window
     // you are already in highlighted -- "here is your desktop, pick one" --
@@ -2278,7 +2280,7 @@ Item {
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     exclusionMode: ExclusionMode.Ignore
 
-    // Full-screen input EXCEPT the trigger strip's own column.
+    // Full-screen input EXCEPT the four pixels the corner triggers sit on.
     //
     // This was unmasked, and the reasoning for that still holds: a switcher is
     // modal for the moment it is up, so clicking beside it should dismiss it
@@ -2289,22 +2291,47 @@ Item {
     // notification toasts, which are passive and long-lived -- and that is what
     // was dropped.
     //
-    // The one-pixel cut-out is what makes the edge trigger need no re-arm
+    // Those four cut-outs are what make the corner triggers need no re-arm
     // latch. Wayland delivers pointer events to exactly one surface, so if this
-    // one covered x=0 it would take pointer focus off edgeStrip the moment it
-    // mapped -- and hand it BACK on dismiss, as a fresh `entered`, with the
-    // cursor never having moved. Every version of that is a reopen loop or a
-    // latch that has to tell a real crossing from a remap. Leaving the column
-    // alone means edgeStrip keeps focus throughout, so no second `entered`
-    // is ever generated and dismissing with the cursor still against the edge
-    // simply stays dismissed. edgeStrip carries the click-away for its own
-    // column so nothing is lost -- see its MouseArea.
-    mask: Region { item: hudInput }
+    // one covered a corner pixel it would take pointer focus off that corner's
+    // surface the moment it mapped -- and hand it BACK on dismiss, as a fresh
+    // `entered`, with the cursor never having moved. Every version of that is a
+    // reopen loop or a latch that has to tell a real crossing from a remap.
+    // Leaving the pixels alone means the corner keeps focus throughout, so no
+    // second `entered` is ever generated and dismissing with the cursor still
+    // parked in the corner simply stays dismissed. Each corner carries the
+    // click-away for its own pixel so nothing is lost -- see their MouseArea.
+    //
+    // Subtracted rather than inset, because the cut-out has to be exactly the
+    // hot area and nothing more: a 1px frame around the whole screen would also
+    // clear the corners, but then every other pixel of that frame would be a
+    // place where clicking beside the card did not dismiss it.
+    mask: Region {
+      item: hudInput
+      Region {
+        intersection: Intersection.Subtract
+        x: 0; y: 0; width: root.cornerSize; height: root.cornerSize
+      }
+      Region {
+        intersection: Intersection.Subtract
+        x: panel.width - root.cornerSize; y: 0
+        width: root.cornerSize; height: root.cornerSize
+      }
+      Region {
+        intersection: Intersection.Subtract
+        x: 0; y: panel.height - root.cornerSize
+        width: root.cornerSize; height: root.cornerSize
+      }
+      Region {
+        intersection: Intersection.Subtract
+        x: panel.width - root.cornerSize; y: panel.height - root.cornerSize
+        width: root.cornerSize; height: root.cornerSize
+      }
+    }
 
     Item {
       id: hudInput
       anchors.fill: parent
-      anchors.leftMargin: root.edgeWidth
     }
 
     // Click-away. Sits before the card, so anything the tile handlers above it
@@ -3337,76 +3364,106 @@ Item {
     }
   }
 
-  // ── Pointer summon: the left screen edge ────────────────────────────────────
+  // ── Pointer summon: the four screen corners ────────────────────────────────
   //
-  // A one-pixel layer surface pinned to the left edge. Crossing into it opens
-  // the strip, with no key held: flick the pointer left, then click the window
-  // you want. There is no polling anywhere in this -- the compositor sends one
-  // wl_pointer.enter when the cursor crosses in, over the same event path every
-  // window already uses, and nothing runs in between.
+  // One one-pixel layer surface per corner of the output, mapped for the whole
+  // session. Crossing into one opens the strip, with no key held: throw the
+  // pointer into a corner, then click the window you want. There is no polling
+  // anywhere in this -- the compositor sends one wl_pointer.enter when the
+  // cursor crosses in, over the same event path every window already uses, and
+  // nothing runs in between.
   //
-  // What it costs, measured on an 8000Hz mouse:
+  // This was the whole left EDGE first, and four pixels is that trigger with
+  // the accidents taken out. An edge is crossed by every gesture that
+  // overshoots something near it -- a window's left side, a scrollbar, a tab
+  // strip -- so it opened the switcher over work aimed somewhere else. A corner
+  // is a place the pointer only reaches on purpose, and it is no harder to hit,
+  // because the clamp that makes one pixel catchable works in both axes there.
   //
-  //  - Cursor PARKED on the strip for 32s: ~0 motion events. A high polling
+  // What it costs, measured on an 8000Hz mouse while this was a full-height
+  // edge. The numbers are an upper bound on four single pixels:
+  //
+  //  - Cursor PARKED on the trigger for 32s: ~0 motion events. A high polling
   //    rate is a rate of reports while the mouse MOVES; a still mouse sends
-  //    nothing, so an idle pointer resting against the edge is free.
-  //  - Cursor SLIDING along the strip: ~500 events/s, and under 10ms of client
-  //    CPU across ~2500 of them -- under 4us each. Even at a full 8000/s that
-  //    is a few percent of one core, and only for the fraction of a second the
-  //    pointer is physically against the edge.
+  //    nothing, so an idle pointer resting in a corner is free.
+  //  - Cursor SLIDING along it: ~500 events/s, and under 10ms of client CPU
+  //    across ~2500 of them -- under 4us each. Even at a full 8000/s that is a
+  //    few percent of one core, and only while the pointer is physically on it.
   //
-  // The cost that is real, and is the whole price of the feature: this surface
-  // takes pointer focus over the leftmost logical pixel column, so clicks there
-  // no longer reach what is behind. With gaps_out at 24 and a 2px border the
-  // nearest window edge is x = 26, so what is behind is the wallpaper -- and
-  // _edgeBlocked() covers the one case, a fullscreen window, where it is not.
+  // The cost that is real, and is the whole price of the feature: these
+  // surfaces take pointer focus over one logical pixel each, so a click in the
+  // very corner of the screen no longer reaches what is behind. With gaps_out
+  // at 24 and a 2px border the nearest window corner is at 26, 26, so what is
+  // behind is the wallpaper -- and _cornerBlocked() covers the one case, a
+  // fullscreen window, where it is not.
   //
   // exclusionMode is Ignore because an exclusive zone here would reserve the
-  // column and shove every window on the output one pixel right. Verified: with
-  // this surface mapped, windows stayed at x = 26.
+  // pixel and shove every window on the output across. Verified while this was
+  // an edge: with the surface mapped, windows stayed at x = 26.
   //
-  // Its own namespace, deliberately not the HUD's. The layer rules in
+  // Their own namespace, deliberately not the HUD's. The layer rules in
   // hypr/window-switcher-looknfeel.lua match ^omarchy-window-switcher-hud$
-  // exactly, so blur and the map fade apply to the card and skip this -- which
-  // is what you want for an invisible one-pixel strip that is mapped for the
-  // whole session.
-  PanelWindow {
-    id: edgeStrip
-    anchors { left: true; top: true; bottom: true }
-    implicitWidth: root.edgeWidth
-    color: "transparent"
-    WlrLayershell.namespace: "omarchy-window-switcher-edge"
-    WlrLayershell.layer: WlrLayer.Top
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-    exclusionMode: ExclusionMode.Ignore
+  // exactly, so blur and the map fade apply to the card and skip these -- which
+  // is what you want for four invisible pixels that are mapped for the whole
+  // session.
+  //
+  // One delegate rather than four near-identical blocks: the only thing that
+  // differs between corners is which pair of edges it anchors to.
+  Variants {
+    model: [
+      { atLeft: true,  atTop: true  },
+      { atLeft: false, atTop: true  },
+      { atLeft: true,  atTop: false },
+      { atLeft: false, atTop: false }
+    ]
 
-    // A real input region, which is what makes hover arrive at all: an absent
-    // mask would eat the whole screen, and an empty one is click-through and
-    // receives nothing. Same reasoning the tile row's own MouseArea rests on.
-    mask: Region { item: edgeHot }
+    PanelWindow {
+      required property var modelData
 
-    // Mapped for the whole session rather than tied to `opened`, and that is
-    // load-bearing. A surface that unmaps and remaps gets a fresh `entered` the
-    // moment it comes back under a stationary cursor -- so hiding this while
-    // the HUD is up would reopen the HUD the instant it was dismissed, forever.
-    // Staying mapped, with the HUD's own input region cut away from this
-    // column, means `entered` fires once per real crossing and never otherwise.
-    MouseArea {
-      id: edgeHot
-      anchors.fill: parent
-      hoverEnabled: true
-      acceptedButtons: Qt.LeftButton
-
-      onEntered: {
-        if (root.opened) return       // already up; the HUD owns the screen
-        if (root._edgeBlocked()) return
-        root.open('{"action":"show"}')
+      anchors {
+        left: modelData.atLeft
+        right: !modelData.atLeft
+        top: modelData.atTop
+        bottom: !modelData.atTop
       }
+      implicitWidth: root.cornerSize
+      implicitHeight: root.cornerSize
+      color: "transparent"
+      WlrLayershell.namespace: "omarchy-window-switcher-corner"
+      WlrLayershell.layer: WlrLayer.Top
+      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+      exclusionMode: ExclusionMode.Ignore
 
-      // Click-away for the one column the HUD's mask gives up. Without this the
-      // leftmost pixel would be the only place on screen where clicking beside
-      // the card did not dismiss it.
-      onClicked: if (root.opened) root.dismiss()
+      // No mask, deliberately. The HUD needs one because it is full-screen and
+      // must give four pixels back; here the surface IS the hot area, so the
+      // default input region -- the whole surface -- is already exactly right.
+      // An empty Region would be worse than none: that is click-through, and
+      // receives nothing at all.
+
+      // Mapped for the whole session rather than tied to `opened`, and that is
+      // load-bearing. A surface that unmaps and remaps gets a fresh `entered`
+      // the moment it comes back under a stationary cursor -- so hiding these
+      // while the HUD is up would reopen the HUD the instant it was dismissed,
+      // forever. Staying mapped, with the HUD's own input region cut away from
+      // these four pixels, means `entered` fires once per real crossing and
+      // never otherwise.
+      MouseArea {
+        id: cornerHot
+        anchors.fill: parent
+        hoverEnabled: true
+        acceptedButtons: Qt.LeftButton
+
+        onEntered: {
+          if (root.opened) return       // already up; the HUD owns the screen
+          if (root._cornerBlocked()) return
+          root.open('{"action":"show"}')
+        }
+
+        // Click-away for the one pixel the HUD's mask gives up here. Without it
+        // the screen corners would be the only places where clicking beside the
+        // card did not dismiss it.
+        onClicked: if (root.opened) root.dismiss()
+      }
     }
   }
 }

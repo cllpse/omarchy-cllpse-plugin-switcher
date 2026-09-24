@@ -2,8 +2,8 @@
 
 A macOS-style window switcher for the [Omarchy](https://omarchy.org) 4
 (Quickshell) shell. Hold `SUPER`, tap `TAB` to cycle a horizontal strip of open
-windows, release to focus the highlighted one — or throw the pointer at the left
-edge of the screen and the same strip opens with no key held. Click a tile to
+windows, release to focus the highlighted one — or throw the pointer into any
+corner of the screen and the same strip opens with no key held. Click a tile to
 focus it, or drag one onto another workspace to move it there.
 
 ![The switcher strip](preview.png)
@@ -38,9 +38,9 @@ focus it, or drag one onto another workspace to move it there.
 omarchy plugin add https://github.com/cllpse/omarchy-cllpse-plugin-switcher.git --enable
 ```
 
-**Then install the keybinds.** Without them the only way in is the left screen
-edge (below) — the keyboard half registers three global shortcuts and waits for
-the compositor to send them. Append
+**Then install the keybinds.** Without them the only way in is the screen
+corners (below) — the keyboard half registers three global shortcuts and waits
+for the compositor to send them. Append
 [`hypr/window-switcher-bindings.lua`](hypr/window-switcher-bindings.lua) to
 `~/.config/hypr/bindings.lua`:
 
@@ -86,38 +86,44 @@ writes nothing else: no state files, no edits to `shell.json` beyond the entry
 | `SUPER+TAB` | open the strip / step forward |
 | `SUPER+SHIFT+TAB` | step back |
 | release `SUPER` | focus the highlighted window |
-| pointer to the **left screen edge** | open the strip, no key held |
+| pointer into **any screen corner** | open the strip, no key held |
 | move the pointer | highlight the tile under it |
 | `SUPER` + click a tile | focus that window |
 | `SUPER` + click beside the card | dismiss without switching |
 | `SUPER` + drag a tile | move that window to the workspace you drop on |
 
-Opened from the left edge there is no key to release, so nothing is
+Opened from a corner there is no key to release, so nothing is
 pre-selected: the strip opens on the window you are already in, and a click is
 what chooses. Click a tile to focus it, click beside the card to dismiss. The
 same drag works — hold the pointer down on a tile and drop it on a workspace.
 
-### The left screen edge
+### The screen corners
 
-A one-pixel layer surface is pinned to the left edge; crossing into it opens the
-strip. Nothing polls — the compositor sends a single pointer-enter event when the
-cursor crosses in, so the trigger costs nothing while you are not touching it.
-A high mouse polling rate does not change that: a rate is reports *while the
-mouse moves*, and a pointer resting against the edge generates no events at all
-(measured at 8000Hz: ~0 events over 32s parked; ~500/s while sliding along it,
-under 4µs of client CPU each).
+A one-pixel layer surface sits in each corner of the screen; crossing into one
+opens the strip. Nothing polls — the compositor sends a single pointer-enter
+event when the cursor crosses in, so the trigger costs nothing while you are not
+touching it. A high mouse polling rate does not change that: a rate is reports
+*while the mouse moves*, and a pointer resting in a corner generates no events
+at all (measured at 8000Hz against the full-height edge this replaced: ~0 events
+over 32s parked; ~500/s while sliding along it, under 4µs of client CPU each).
 
-Hyprland clamps the cursor to the output, so a fast flick cannot overshoot a
-one-pixel target the way it would anywhere else on screen — the edge is what
-makes one pixel enough.
+Hyprland clamps the cursor to the output, and in a corner it clamps in both axes
+at once, so a fast throw cannot overshoot a one-pixel target the way it would
+anywhere else on screen — measured on a 3072×1280 logical output, a warp to
+(99999, 99999) lands at `3071, 1279`. That clamp is what makes one pixel enough.
+
+It was the whole left edge first. A corner is the same gesture with the
+accidents taken out: an edge is crossed by anything that overshoots a window's
+left side, a scrollbar or a tab strip, and each of those opened the switcher
+over work aimed somewhere else.
 
 Two things it costs, both deliberate:
 
-- The leftmost pixel column no longer passes clicks through to what is behind
-  it. With Omarchy's default gaps the nearest window edge is 26px in, so what is
-  behind it is the wallpaper.
+- The four corner pixels no longer pass clicks through to what is behind them.
+  With Omarchy's default gaps the nearest window corner is 26px in, so what is
+  behind them is the wallpaper.
 - It stands down while a window on the focused workspace is fullscreen, so a
-  video or a game cannot be interrupted by the pointer drifting left.
+  video or a game cannot be interrupted by a pointer thrown into a corner.
 
 Dragging shows a caret at the boundary the window would land on. Drop outside
 the card and nothing happens. The strip auto-scrolls when you drag against

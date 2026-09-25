@@ -190,7 +190,7 @@ remove that line.
 entry's `Icon=` value rather than for a command, so a Claude session's mark is
 `claude-code.svg` and `claude` has to be pointed at it.
 
-All 14 shipped entries, which is the whole file:
+All 15 shipped entries, which is the whole file:
 
 | title | resolves to | why |
 |---|---|---|
@@ -201,6 +201,7 @@ All 14 shipped entries, which is the whole file:
 | `convert`, `magick` | `imagemagick` | same |
 | `ffprobe` | `ffmpeg` | same |
 | `node`, `psql`, `python3`, `redis-cli`, `sqlite3`, `ytm` | `nodejs`, `postgresql`, `python`, `redis`, `sqlite`, `youtube-music` | same |
+| `youtuimusic` | `youtube-music` | a YouTube Music TUI with no mark of its own; it borrows the service's |
 
 **The format is strict JSON** — one object of `"command": "icon-name"`, and
 nothing else. It carries no comments, because JSON has none; this table is

@@ -13,5 +13,6 @@
   "ffprobe": "ffmpeg",
   "magick": "imagemagick",
   "convert": "imagemagick",
-  "ytm": "youtube-music"
+  "ytm": "youtube-music",
+  "youtuimusic": "youtube-music"
 }

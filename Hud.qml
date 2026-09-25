@@ -2471,7 +2471,7 @@ Item {
 
       // The floor is a named token for the same reason cellW is: it is what
       // actually decides tile height. The computed side sits well under it
-      // (85 against 104 at the default base), so the floor wins outright and a
+      // (89 against 104 at the default base), so the floor wins outright and a
       // theme with no say over it has no say over the tile.
       //
       // Style.spacing.xs rather than Style.space(3): identical by default, but
@@ -2486,19 +2486,24 @@ Item {
       // here it's the primary element of a card, so it steps up the type scale
       // -- the way a macOS Cmd-Tab tile leads with its icon.
       //
-      // fontPx(1.667) is 20 at the default base, one step down from the
-      // `display` token (2.0 rem / 24) this used to be. There is no token in
-      // between: the ladder runs title 14, heading 16, display 24, so taking
-      // the next token down would have put the icon at 16 -- the same size as
-      // the name line beneath it, which stops reading as an icon-led tile.
+      // `display` is that step -- 24 at the default base, 26 at the 13 in use
+      // here. Nothing sits between it and the line below: the ladder runs
+      // title 14, heading 16, display 24, so the next token DOWN is the same
+      // 16 as the name line beneath the icon, which stops reading as an
+      // icon-led tile.
       //
-      // Stepping off the ladder costs two things, both accepted knowingly. It
-      // no longer picks up a per-theme `display` override, and fontPx rounds
-      // wherever 1.667 isn't exact (20.0 at base 12, 23.33 -> 23 at base 14)
-      // where the old 2.0 was exact at every base size. A correctly
-      // proportioned tile at the size actually in use beats an exact multiple
-      // at sizes that are not.
-      readonly property int iconSize: Style.fontPx(1.667)
+      // It was fontPx(1.667) -- 20 at the default base -- for a while, on the
+      // grounds that a tile wanted something between heading and display. That
+      // bought a size off the scale everything around it is on, for two costs:
+      // a per-theme `display` override stopped reaching the icon, and the
+      // multiplier only lands on a whole pixel where 1.667 happens to be exact
+      // (20.0 at base 12, but 21.67 -> 22 at 13 and 23.33 -> 23 at 14). A
+      // token is exact at every base size by construction.
+      //
+      // The tile does not grow with it -- rowH's floor above still wins (89
+      // against 104 at the default base), and the mark has a 150-wide cell to
+      // sit in.
+      readonly property int iconSize: Style.font.display
 
       // What an ICON is drawn at, as opposed to the em box a glyph gets. The
       // two are not the same thing and never were.

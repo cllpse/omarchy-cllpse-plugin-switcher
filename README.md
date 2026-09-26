@@ -190,7 +190,14 @@ remove that line.
 entry's `Icon=` value rather than for a command, so a Claude session's mark is
 `claude-code.svg` and `claude` has to be pointed at it.
 
-All 15 shipped entries, which is the whole file:
+**3. The program writes its own title.** A TUI can overwrite the title with a
+marker of its own, and then the first word is not a command at all. Pi titles its
+window `π - <directory>` — one OSC 0 write at startup, measured rather than
+assumed — so the key looked up is literally `π`. Claude Code does the same thing
+and is deliberately *not* in this file: its marker tracks session state and
+changes, so the QML recognises the whole family of markers at once instead.
+
+All 16 shipped entries, which is the whole file:
 
 | title | resolves to | why |
 |---|---|---|
@@ -202,6 +209,7 @@ All 15 shipped entries, which is the whole file:
 | `ffprobe` | `ffmpeg` | same |
 | `node`, `psql`, `python3`, `redis-cli`, `sqlite3`, `ytm` | `nodejs`, `postgresql`, `python`, `redis`, `sqlite`, `youtube-music` | same |
 | `youtuimusic` | `youtube-music` | a YouTube Music TUI with no mark of its own; it borrows the service's |
+| `π` | `pi` | Pi overwrites the title with `π - <directory>`, so its marker is the first word |
 
 **The format is strict JSON** — one object of `"command": "icon-name"`, and
 nothing else. It carries no comments, because JSON has none; this table is

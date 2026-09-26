@@ -14,5 +14,7 @@
   "magick": "imagemagick",
   "convert": "imagemagick",
   "ytm": "youtube-music",
-  "youtuimusic": "youtube-music"
+  "youtuimusic": "youtube-music",
+
+  "π": "pi"
 }

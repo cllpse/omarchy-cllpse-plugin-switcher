@@ -30,6 +30,16 @@ The reference is Ghostty's own icon, `viewBox="0 0 27 32"`, ink filling
 99% × 100% of it. Every icon here matches that: ink edge-to-edge in its own box,
 so all of them render at the same size.
 
+**One icon is deliberately not, and it is the only one.** `pi` is inset to
+74% × 74% of its box, because a solid blocky mark reads heavier than the
+thin-stroked marks beside it. The measurement below prints a `viewBox` for it
+exactly as it does for a mark that was padded by accident, so that line is the
+script working rather than a finding. The file says so itself, in an XML comment
+above its `<svg>` tag — the one thing in an icon file that is neither artwork nor
+`viewBox`. **A comment must not contain `--`**: XML forbids a double hyphen
+inside one, and both QtSvg and rsvg then reject the whole document, which here
+means a tile that silently keeps its Nerd Font glyph.
+
 **Measure the alpha extent, never a colour trim.** `magick -trim` trims whatever
 colour the corner pixel happens to be, so on a mark with a background it eats the
 background and reports the inner shape — and "tightening" to that crops the

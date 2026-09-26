@@ -151,8 +151,10 @@ Code is recognised by the status marker it writes into the title.
 
 **An icon is drawn exactly as it is.** No recolouring, no tinting, no theme
 adaptation — the file is the source of truth for its own appearance, and the only
-thing the plugin ever changes about one is its `viewBox`, so that every icon
-fills its box the way Ghostty's does and they all render at the same size.
+thing the plugin ever changes about one is its `viewBox`, so that an icon fills
+its box the way Ghostty's does and they render at the same size. One shipped
+mark, `pi`, is inset to 74% of its box instead, deliberately: a solid blocky mark
+reads heavier than the thin-stroked ones beside it.
 
 **Where icons are looked up**, in order — first hit wins:
 

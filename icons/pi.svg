@@ -1,7 +1,12 @@
-<svg width="111" height="111" viewBox="0 0 111 111" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M0 0H83V28H0V0Z" fill="#EE9081"/>
-<path d="M55 28H83V56H55V28Z" fill="#EE9081"/>
-<path d="M83 56H111V111H83V56Z" fill="#EFBD58"/>
-<path d="M0 28H28V111H0V28Z" fill="#4D99BD"/>
-<path d="M28 56H55V84H28V56Z" fill="#4D99BD"/>
+<!-- Inset on purpose: 111 of ink in a 151 box, so this draws at 74% where every
+     other mark here is edge to edge. A solid blocky mark reads heavier than the
+     thin-stroked ones beside it. The scaling check in AGENTS.md will offer to
+     tighten this to viewBox="20 20 111 111"; that is the script working, not a
+     finding. Leave it. -->
+<svg width="151" height="151" viewBox="0 0 151 151" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M20 20H103V48H20V20Z" fill="#EE9081"/>
+<path d="M75 48H103V76H75V48Z" fill="#EE9081"/>
+<path d="M103 76H131V131H103V76Z" fill="#EFBD58"/>
+<path d="M20 48H48V131H20V48Z" fill="#4D99BD"/>
+<path d="M48 76H75V104H48V76Z" fill="#4D99BD"/>
 </svg>

@@ -3414,60 +3414,83 @@ Item {
   //
   // One delegate rather than four near-identical blocks: the only thing that
   // differs between corners is which pair of edges it anchors to.
+  //
+  // Bound to a real screen, one set per output, the same way Omarchy's own bar
+  // is (Bar.qml: Variants over Quickshell.screens, screen: modelData). These
+  // used to name no screen, which only works until the output goes away: a
+  // modeset that drops the link -- a scale change on a TV behind a USB-C->HDMI
+  // adapter does -- leaves Hyprland with nothing but its FALLBACK output for a
+  // few seconds. Unbound surfaces were recreated there ("Layershell screen does
+  // not correspond to a real screen. Letting the compositor pick."), died with
+  // FALLBACK when the real output came back, and nothing ever mapped them
+  // again, so the corners stayed dead until a shell restart. The HUD itself
+  // does not need this: it is mapped per open, so it lands on whatever output
+  // exists at the time. Bound here, Variants drops the delegate with the output
+  // and builds a fresh one when the output returns.
   Variants {
-    model: [
-      { atLeft: true,  atTop: true  },
-      { atLeft: false, atTop: true  },
-      { atLeft: true,  atTop: false },
-      { atLeft: false, atTop: false }
-    ]
+    model: Quickshell.screens
 
-    PanelWindow {
+    Scope {
+      id: cornerOutput
       required property var modelData
 
-      anchors {
-        left: modelData.atLeft
-        right: !modelData.atLeft
-        top: modelData.atTop
-        bottom: !modelData.atTop
-      }
-      implicitWidth: root.cornerSize
-      implicitHeight: root.cornerSize
-      color: "transparent"
-      WlrLayershell.namespace: "omarchy-window-switcher-corner"
-      WlrLayershell.layer: WlrLayer.Top
-      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-      exclusionMode: ExclusionMode.Ignore
+      Variants {
+        model: [
+          { atLeft: true,  atTop: true  },
+          { atLeft: false, atTop: true  },
+          { atLeft: true,  atTop: false },
+          { atLeft: false, atTop: false }
+        ]
 
-      // No mask, deliberately. The HUD needs one because it is full-screen and
-      // must give four pixels back; here the surface IS the hot area, so the
-      // default input region -- the whole surface -- is already exactly right.
-      // An empty Region would be worse than none: that is click-through, and
-      // receives nothing at all.
+        PanelWindow {
+          required property var modelData
 
-      // Mapped for the whole session rather than tied to `opened`, and that is
-      // load-bearing. A surface that unmaps and remaps gets a fresh `entered`
-      // the moment it comes back under a stationary cursor -- so hiding these
-      // while the HUD is up would reopen the HUD the instant it was dismissed,
-      // forever. Staying mapped, with the HUD's own input region cut away from
-      // these four pixels, means `entered` fires once per real crossing and
-      // never otherwise.
-      MouseArea {
-        id: cornerHot
-        anchors.fill: parent
-        hoverEnabled: true
-        acceptedButtons: Qt.LeftButton
+          screen: cornerOutput.modelData
+          anchors {
+            left: modelData.atLeft
+            right: !modelData.atLeft
+            top: modelData.atTop
+            bottom: !modelData.atTop
+          }
+          implicitWidth: root.cornerSize
+          implicitHeight: root.cornerSize
+          color: "transparent"
+          WlrLayershell.namespace: "omarchy-window-switcher-corner"
+          WlrLayershell.layer: WlrLayer.Top
+          WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+          exclusionMode: ExclusionMode.Ignore
 
-        onEntered: {
-          if (root.opened) return       // already up; the HUD owns the screen
-          if (root._cornerBlocked()) return
-          root.open('{"action":"show"}')
+          // No mask, deliberately. The HUD needs one because it is full-screen
+          // and must give four pixels back; here the surface IS the hot area,
+          // so the default input region -- the whole surface -- is already
+          // exactly right. An empty Region would be worse than none: that is
+          // click-through, and receives nothing at all.
+
+          // Mapped for the whole session rather than tied to `opened`, and that
+          // is load-bearing. A surface that unmaps and remaps gets a fresh
+          // `entered` the moment it comes back under a stationary cursor -- so
+          // hiding these while the HUD is up would reopen the HUD the instant
+          // it was dismissed, forever. Staying mapped, with the HUD's own input
+          // region cut away from these four pixels, means `entered` fires once
+          // per real crossing and never otherwise.
+          MouseArea {
+            id: cornerHot
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.LeftButton
+
+            onEntered: {
+              if (root.opened) return       // already up; the HUD owns the screen
+              if (root._cornerBlocked()) return
+              root.open('{"action":"show"}')
+            }
+
+            // Click-away for the one pixel the HUD's mask gives up here.
+            // Without it the screen corners would be the only places where
+            // clicking beside the card did not dismiss it.
+            onClicked: if (root.opened) root.dismiss()
+          }
         }
-
-        // Click-away for the one pixel the HUD's mask gives up here. Without it
-        // the screen corners would be the only places where clicking beside the
-        // card did not dismiss it.
-        onClicked: if (root.opened) root.dismiss()
       }
     }
   }

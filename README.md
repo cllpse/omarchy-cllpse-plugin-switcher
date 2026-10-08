@@ -99,7 +99,7 @@ same drag works — hold the pointer down on a tile and drop it on a workspace.
 
 ### The screen corners
 
-A one-pixel layer surface sits in each corner of the screen; crossing into one
+A one-pixel layer surface sits in each corner of every screen; crossing into one
 opens the strip. Nothing polls — the compositor sends a single pointer-enter
 event when the cursor crosses in, so the trigger costs nothing while you are not
 touching it. A high mouse polling rate does not change that: a rate is reports
@@ -110,7 +110,14 @@ over 32s parked; ~500/s while sliding along it, under 4µs of client CPU each).
 Hyprland clamps the cursor to the output, and in a corner it clamps in both axes
 at once, so a fast throw cannot overshoot a one-pixel target the way it would
 anywhere else on screen — measured on a 3072×1280 logical output, a warp to
-(99999, 99999) lands at `3071, 1279`. That clamp is what makes one pixel enough.
+(99999, 99999) lands at `3071, 1279`, and on a 2880×1620 one at `2879, 1619`.
+That clamp is what makes one pixel enough.
+
+Each set of four is bound to its output, the way Omarchy's own bar is. They
+used to name no output, and a modeset that briefly drops the link (a scale
+change on a TV behind a USB-C→HDMI adapter does) recreated them on Hyprland's
+temporary `FALLBACK` output, where they died with it — the corners stayed dead
+until the shell restarted. Bound, they are rebuilt when the output comes back.
 
 It was the whole left edge first. A corner is the same gesture with the
 accidents taken out: an edge is crossed by anything that overshoots a window's

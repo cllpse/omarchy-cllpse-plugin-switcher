@@ -14,14 +14,18 @@ hl.layer_rule({
   blur = true,
   blur_popups = true,
   -- The card's scrim sits below this, so it renders unblurred and the windows
-  -- being switched between stay readable.
+  -- being switched between stay readable. (The scrim is off by default --
+  -- showScrim in Hud.qml -- in which case nothing behind the card is drawn at
+  -- all.)
   ignore_alpha = 0.6,
 })
 
--- No compositor fade, in or out: the card lands under the keypress. The scrim
--- still fades in -- Hud.qml animates it itself -- which the compositor cannot
--- do, because a card and its scrim are one layer surface. A layer fade here
--- would stack on top of that one and take the card with it.
+-- No compositor fade, in or out: the card lands under the keypress. With
+-- showScrim on in Hud.qml, the scrim still fades in -- Hud.qml animates it
+-- itself -- which the compositor cannot do, because a card and its scrim are
+-- one layer surface. A layer fade here would stack on top of that one and take
+-- the card with it. With it off, as it ships, the strip opens with no fade at
+-- all.
 hl.layer_rule({
   match = { namespace = "^omarchy-window-switcher-hud$" },
   no_anim = true,

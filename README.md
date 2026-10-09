@@ -58,8 +58,8 @@ It unbinds Omarchy's default `SUPER+TAB` (next workspace) first.
 Optionally append
 [`hypr/window-switcher-looknfeel.lua`](hypr/window-switcher-looknfeel.lua) to
 `~/.config/hypr/looknfeel.lua` for blur matching Omarchy's own panels, and to
-keep the compositor from fading the card in (only the scrim fades, from the
-plugin itself):
+keep the compositor from fading the card in (the strip has no fade of its own;
+its optional scrim, off by default, fades from the plugin itself):
 
 ```bash
 cat ~/.config/omarchy/plugins/cllpse.window-switcher/hypr/window-switcher-looknfeel.lua \

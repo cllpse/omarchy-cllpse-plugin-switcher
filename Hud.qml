@@ -156,6 +156,18 @@ Item {
   // same set of blank desktops without a second source of truth.
   readonly property int emptyWorkspaceSlots: 5
 
+  // Whether the strip dims the desktop behind the card. Off: the card sits
+  // straight on the desktop, separated from it by its border alone.
+  //
+  // The scrim it switches is intact below -- the menu's own colour, its 120ms
+  // fade-in -- and drawn exactly as it was the moment this is true. It is off by
+  // choice, not removed, so turning it back on is this one line.
+  //
+  // Hidden, not dropped: the click-away is the window's input region and the
+  // MouseArea that fills it, neither of which is the scrim, so clicking beside
+  // the card still dismisses the strip with this off.
+  readonly property bool showScrim: false
+
   // ── Input path ──────────────────────────────────────────────────────────────
   //
   // The keybinds reach this plugin through Hyprland's global-shortcuts protocol
@@ -2360,7 +2372,8 @@ Item {
       }
     }
 
-    // The SUPER+SPACE menu's own scrim, bound rather than reproduced.
+    // The SUPER+SPACE menu's own scrim, bound rather than reproduced. Drawn
+    // only while root.showScrim is true, which it currently is not.
     //
     // This used to compose its own colour at 0.35 -- the value the theme's
     // inert [launcher] section intends -- on the theory that a switcher wants a
@@ -2383,6 +2396,7 @@ Item {
     // between remain readable.
     Rectangle {
       anchors.fill: parent
+      visible: root.showScrim
       color: Color.menu.scrim
 
       // The one thing on this surface that animates. The card lands at full

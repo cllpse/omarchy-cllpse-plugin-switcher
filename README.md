@@ -331,6 +331,14 @@ highlights.
   every title on screen already has an answer. Profiles are found once per
   session (28ms) and cached for it; a lookup is ~17ms, of which under half a
   millisecond is the query and the rest is Python starting.
+- **One overlay at a time.** Opening the strip sends
+  `custom>>overlay-open>>cllpse.window-switcher` on Hyprland's event socket
+  (`hl.dsp.event`), and the strip closes without switching when another
+  overlay sends the same event with its own id. The last one opened wins.
+  [Supermenu](https://github.com/cllpse/omarchy-cllpse-plugin-supermenu) does
+  this too, so `SUPER+SPACE` over the strip cancels it. Neither plugin names
+  the other. To close the strip from a shell:
+  `hyprctl dispatch 'hl.dsp.event("overlay-open>>x")'`.
 - Windows on special workspaces (the scratchpad) are deliberately not listed.
 - Live edits inside a plugin directory may not auto-reload; run
   `omarchy-restart-shell` after changing files here.

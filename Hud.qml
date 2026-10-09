@@ -1578,9 +1578,47 @@ Item {
   Connections {
     target: Hyprland
     function onRawEvent(event) {
+      if (event.name === "custom") { root._overlayEvent(String(event.data)); return }
       if (root.refreshEvents[event.name] !== 1) return
       refreshDebounce.restart()
     }
+  }
+
+  // ── One overlay at a time ───────────────────────────────────────────────────
+  //
+  // Opening announces itself on Hyprland's event socket, and any other overlay
+  // that is open when the announcement arrives closes. The last one opened
+  // wins. The supermenu (cllpse.supermenu) does the same, so SUPER+SPACE over
+  // the strip cancels the strip, and SUPER+TAB or a corner over the supermenu
+  // cancels the supermenu. Neither plugin names the other: each sends its own
+  // id and closes on any id that is not its own, so a third overlay joins by
+  // doing the same two things.
+  //
+  // The channel is Hyprland's own: hl.dsp.event(data) puts `custom>>data` on
+  // socket2 for every client, and Hyprland.rawEvent already hands this process
+  // every line of it (name "custom", data after the first `>>`). The event is
+  //
+  //   custom>>overlay-open>><plugin id>
+  //
+  // and `hyprctl dispatch 'hl.dsp.event("overlay-open>>x")'` closes the strip
+  // from a shell, which is how this was tested.
+  //
+  // Cancel, not commit: dismiss() focuses nothing. SUPER released after
+  // SUPER+SPACE took the strip away reaches commit() with `opened` false,
+  // which focuses nothing either.
+  //
+  // Sent on every change of `opened` to true, the cold path included, so the
+  // two cannot both be up. If both open inside one round trip, each sees the
+  // other's announcement and both close. Neither stays open over the other.
+  onOpenedChanged: {
+    if (root.opened)
+      Hyprland.dispatch('hl.dsp.event("overlay-open>>' + root.pluginId + '")')
+  }
+
+  function _overlayEvent(data) {
+    if (!data.startsWith("overlay-open>>")) return
+    if (data.slice("overlay-open>>".length) === root.pluginId) return
+    if (root.opened) root.dismiss()
   }
 
   // A single window move emits several events in a burst; coalesce them into

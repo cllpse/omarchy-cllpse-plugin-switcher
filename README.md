@@ -304,7 +304,7 @@ rows uncheckpointed, all 399 are read and not one byte of the profile changes.
 ## Theming
 
 The card binds the active theme's menu colours and Hyprland's `decoration:rounding`,
-so it tracks your theme with nothing to configure. Three sizes can be pinned
+so it tracks your theme with nothing to configure. Four sizes can be pinned
 from a theme's `[spacing]` section if you want them different:
 
 | token | default | what it sets |
@@ -312,6 +312,12 @@ from a theme's `[spacing]` section if you want them different:
 | `switcher-cell-width` | 150 | tile width |
 | `switcher-group-gap` | 36 | extra space between workspace groups |
 | `switcher-row-height` | 104 | tile height floor |
+| `switcher-card-padding` | 6 | space between the card's border and the tiles |
+
+The highlight's corner is concentric with the card's: Hyprland's rounding, less
+the distance from the card's edge in to the tiles (border plus
+`switcher-card-padding`). Padding at or past the rounding gives square
+highlights.
 
 ## Notes
 

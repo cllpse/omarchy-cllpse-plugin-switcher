@@ -2563,10 +2563,34 @@ Item {
       readonly property int scrimW: Math.min(
         card.contentLeftInset + card.cellW * 2 / 3, list.width / 2)
 
+      // The corner for anything drawn at the tiles' inset -- the selection
+      // fill, the drop target -- concentric with the card's own: the card's
+      // radius less the distance in to the tiles, so the two curves run
+      // parallel. The overflow scrims below do the same against their edge.
+      readonly property int innerRadius: Math.max(0, card.radius - card.contentTopInset)
+
       color: Color.menu.background
       radius: Style.cornerRadius
       borderSpec: Border.surfaceSpec("menu", "border", Color.menu.border, Math.max(1, Style.space(2)))
-      padding: Style.spacing.panelPadding
+
+      // The padding is what sets innerRadius. The tiles sit border + padding in
+      // from the card's edge, and a concentric corner is the card's radius less
+      // that, so the inset has to stay under the corner for the highlight to
+      // keep any rounding at all.
+      //
+      // This was the menu's own panelPadding (18, 20 at this text size). That
+      // put the tiles 22 in from an 18 corner, where concentric works out to 0
+      // -- a square highlight in a rounded card -- so the highlight drew at the
+      // card's full 18 instead, and read as too round for where it sat. 6 brings
+      // the inset under the corner (2 border + 7 padding = 9 at this text size,
+      // so a 9 corner) and draws the card in closer around the strip.
+      //
+      // A named token, like cellW above, with the same raw-override asymmetry.
+      // A theme that sets it past the corner gets square highlights, not broken
+      // ones: innerRadius floors at 0. The card's radius does not scale with
+      // text size -- it is Hyprland's decoration:rounding -- so a larger text
+      // size, which grows the padding, rounds the highlight less.
+      padding: Style.spacingToken("switcher-card-padding", 6)
 
       width: Math.min(parent.width - Style.gapsOut * 2,
                       card.contentLeftInset + card.contentRightInset + stripW)
@@ -2599,7 +2623,7 @@ Item {
           width: root._cellX(dropTarget.range[1]) - root._cellX(dropTarget.range[0])
             + card.cellW + card.gap
           height: parent.height
-          radius: Style.cornerRadius
+          radius: card.innerRadius
           // The cursor cell's own fill and border. There is no separate
           // drop-target role in the palette, and inventing a colour here would
           // be the one thing in this file that does not come from the theme --
@@ -2666,7 +2690,7 @@ Item {
             x: slot.groupStart ? card.groupGap : 0
             width: card.cellW
             height: list.height
-            radius: Style.cornerRadius
+            radius: card.innerRadius
             readonly property bool sel: index === root.index
             // Never filled itself: the selection is selectionFill, just below.
             color: "transparent"
@@ -2700,7 +2724,8 @@ Item {
             BorderSurface {
               id: selectionFill
               anchors.fill: parent
-              radius: Style.cornerRadius
+              // Concentric with the card's corner -- see card.innerRadius.
+              radius: card.innerRadius
               color: Color.menu.selectedBackground
               borderSpec: card.selectedBorderSpec
               opacity: cell.sel ? 1 : 0

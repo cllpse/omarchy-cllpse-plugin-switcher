@@ -2609,57 +2609,6 @@ Item {
         }
       }
 
-      // The highlight: one surface that slides from tile to tile, instead of
-      // each tile switching its own background on and off. The tiles draw no
-      // fill of their own, so this, beneath them, is the selection.
-      //
-      // Outside the ListView for the reason dropTarget is, and in the same two
-      // coordinate spaces: clipped to the viewport, then shifted by the scroll
-      // inside that. The shift is not animated and the slide is, so when
-      // positionViewAtIndex scrolls the strip the highlight moves with the tiles
-      // in the same frame, and only the change of index travels.
-      //
-      // The slide is off while the strip is closed. _openStepped() sets the
-      // index before it sets `opened`, so each open puts the highlight straight
-      // onto its tile instead of sliding it in from wherever the last one left
-      // it. A disabled Behavior also stops an animation still in flight.
-      //
-      // 140ms on OutCubic: Omarchy's QML curve, at the long end of its 110-140ms
-      // because a slide covers more ground than a fade -- the first TAB of a
-      // gesture can cross most of the strip to reach the previous window.
-      Item {
-        x: list.x
-        y: list.y
-        width: list.width
-        height: list.height
-        clip: true
-
-        Item {
-          x: -(list.contentX - list.originX)
-          height: parent.height
-
-          BorderSurface {
-            id: selectionSurface
-            visible: root.index >= 0 && root.index < root.wins.length
-            x: root._cellX(Math.max(0, root.index))
-            width: card.cellW
-            height: parent.height
-            radius: Style.cornerRadius
-            color: Color.menu.selectedBackground
-            borderSpec: card.selectedBorderSpec
-            // The tile in the hand fades to a hole while it is dragged (see the
-            // cell's own opacity), and that tile is the highlighted one -- so
-            // its fill has to fade with it, now that the fill lives here.
-            opacity: (root.dragging && root.index === root.dragIndex) ? 0.3 : 1
-
-            Behavior on x {
-              enabled: root.opened
-              NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
-            }
-          }
-        }
-      }
-
       ListView {
         id: list
         x: card.contentLeftInset
@@ -2685,9 +2634,9 @@ Item {
         // BorderSurface at radius = cornerRadius, label in heading/Medium and
         // the secondary line in title at 0.52 (bumped two token steps up from
         // the menu's own bodySmall). The menu's selected fill and
-        // selected-border spec are drawn by selectionSurface above, which
-        // slides between tiles rather than living in any one of them, and the
-        // label keeps its colour when selected, unlike a menu row.
+        // selected-border spec are each tile's own `selectionFill`, which
+        // fades in and out rather than switching, and the label keeps its
+        // colour when selected, unlike a menu row.
         // Only the icon deliberately departs -- see card.iconSize.
         // Wrapped so a tile can carry the group gap in front of it: ListView's
         // own `spacing` is uniform, and this is the only place the extra space
@@ -2718,7 +2667,7 @@ Item {
             height: list.height
             radius: Style.cornerRadius
             readonly property bool sel: index === root.index
-            // Never filled: the selection is selectionSurface, beneath the list.
+            // Never filled itself: the selection is selectionFill, just below.
             color: "transparent"
             borderSpec: Border.none()
             // Lifted. The tile being dragged fades back to a hole in the strip
@@ -2726,6 +2675,40 @@ Item {
             // dragged item normally reads -- and it keeps the two from looking
             // like two copies of the same window.
             opacity: (root.dragging && index === root.dragIndex) ? 0.3 : 1
+
+            // The selection: the menu's selected fill and selected-border,
+            // faded rather than switched. The tile losing the selection fades
+            // out while the one gaining it fades in -- under the pointer and
+            // under TAB alike, since both are a change of root.index.
+            //
+            // A child of the cell, declared before the content so it draws
+            // beneath it, and so the cell's own drag dim above carries it
+            // without a second opacity term here.
+            //
+            // 140ms on OutCubic: Omarchy's own opacity fade for a hovered
+            // widget (WidgetButton.qml), the same both ways.
+            //
+            // A slide was tried first -- one surface beneath the list, moving
+            // between tiles -- and dropped for this.
+            //
+            // Instant while the strip is closed. _openStepped() sets the index
+            // before it sets `opened`, so an open shows the selected tile
+            // already lit, rather than fading out the last open's tile and
+            // fading this one in under a strip that is itself fading in. A
+            // disabled Behavior also stops a fade still in flight.
+            BorderSurface {
+              id: selectionFill
+              anchors.fill: parent
+              radius: Style.cornerRadius
+              color: Color.menu.selectedBackground
+              borderSpec: card.selectedBorderSpec
+              opacity: cell.sel ? 1 : 0
+
+              Behavior on opacity {
+                enabled: root.opened
+                NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+              }
+            }
 
             Column {
               anchors.centerIn: parent
@@ -2974,10 +2957,10 @@ Item {
                 // Static: the selection does not recolour the name. It used to,
                 // to selectedText, the way the launcher's row delegate does
                 // (`row.hasCursor ? selectedText : foreground`, Menu.qml:1242).
-                // With the highlight sliding, the colour switched the instant
-                // the index changed while the fill was still on its way, so the
-                // name went blue before the highlight reached it. The fill alone
-                // now marks the selection. The detail line below never changed
+                // With the fill animated, the colour switched the instant the
+                // index changed while the fill was still fading in, so the name
+                // went blue before the highlight had arrived. The fill alone now
+                // marks the selection. The detail line below never changed
                 // colour at all.
                 color: Color.menu.text
               }

@@ -127,9 +127,11 @@ def discover():
         found. Measured on a real $HOME: depth 2 is 12.8ms, depth 3 is 31.3ms,
         depth 4 is 66.2ms, all of it paid ONCE per session and only on first
         sight of a browser window. A flatpak profile at
-        .var/app/<id>/.mozilla/firefox/x sits at depth 4 and is still missed
-        -- that one stays a deliberate stop, since the cost doubles again for
-        a layout no native install uses.
+        .var/app/<id>/.mozilla/firefox/x sits at depth 5 (app, <id>, .mozilla,
+        firefox, x -- this said 4 until it was counted) and is still missed --
+        that one stays a deliberate stop, since depth 4 alone already doubles
+        the cost and 5 would be more again, for a layout no native install
+        uses.
 
     ONE scandir per directory, reused for both the marker test and the descent
     -- measured at 10.5ms against 23.4ms for the obvious version that stats the

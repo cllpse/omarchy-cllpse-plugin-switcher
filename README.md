@@ -210,7 +210,7 @@ assumed — so the key looked up is literally `π`. Claude Code does the same th
 and is deliberately *not* in this file: its marker tracks session state and
 changes, so the QML recognises the whole family of markers at once instead.
 
-All 16 shipped entries, which is the whole file:
+All 18 shipped entries, which is the whole file:
 
 | title | resolves to | why |
 |---|---|---|
@@ -221,6 +221,7 @@ All 16 shipped entries, which is the whole file:
 | `convert`, `magick` | `imagemagick` | same |
 | `ffprobe` | `ffmpeg` | same |
 | `node`, `psql`, `python3`, `redis-cli`, `sqlite3`, `ytm` | `nodejs`, `postgresql`, `python`, `redis`, `sqlite`, `youtube-music` | same |
+| `brew`, `pacman` | `homebrew`, `arch-pacman` | named for the project, not the command; both marks shipped for a while with no alias, so nothing looked them up. `sudo pacman` still titles itself `sudo` and gets no icon |
 | `youtuimusic` | `youtube-music` | a YouTube Music TUI with no mark of its own; it borrows the service's |
 | `π` | `pi` | Pi overwrites the title with `π - <directory>`, so its marker is the first word |
 

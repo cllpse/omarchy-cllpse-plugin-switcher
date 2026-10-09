@@ -253,10 +253,15 @@ Item {
   //
   // A window that has gone fullscreen is the one case where something real is
   // drawn under a corner -- ordinary windows never reach one, because
-  // gaps_out (24) plus border_size (2) put the nearest window corner at
-  // 26, 26 -- and it is also the one case where a switcher appearing because
-  // the pointer was thrown into a corner is actively unwanted: a video, a
-  // game, a presentation.
+  // gaps_out plus border_size hold the nearest window corner off it: at 12, 12
+  // on stock Omarchy (gaps_out 10, border_size 2), and at 26, 26 on the
+  // configuration this plugin came from, which raises gaps_out to 24. This
+  // comment used to give only the 26, which is that machine's value and not a
+  // default. (Omarchy's no-gaps toggle zeroes both, and then a tiled window
+  // does reach a corner; nothing here stands down for that.) Fullscreen is
+  // also the one case where a switcher appearing because the pointer was
+  // thrown into a corner is actively unwanted: a video, a game, a
+  // presentation.
   //
   // Read as a function rather than bound as a property on purpose. A binding
   // would depend on hasFullscreen carrying a change notification; a direct read
@@ -418,11 +423,12 @@ Item {
 
   // ── Marks the plugin ships itself ───────────────────────────────────────────
   //
-  // 75 app and CLI/agent marks in ONE directory, icons/, so tiles and terminal
-  // process icons both work on a machine that has done nothing but install this
-  // plugin. Resolved LAST, after the user's own drop-ins and after their
-  // installed icon themes, so they can only ever fill a gap -- they never
-  // override a mark somebody chose.
+  // 100 app and CLI/agent marks (75 when this was first written) in ONE
+  // directory, icons/, so tiles and terminal process icons both work on a
+  // machine that has done nothing but install this plugin. Resolved LAST,
+  // after the user's own drop-ins and after their installed icon themes, so
+  // they can only ever fill a gap -- they never override a mark somebody
+  // chose.
   //
   // Every one is drawn exactly as authored. There is no flat/colour split and
   // no recolouring anywhere in this file: an icon is the source of truth for
@@ -544,9 +550,13 @@ Item {
   // Keyed on the window class, because that is all a switcher has, while the
   // dropped file is named for the desktop entry's `Icon=`. Those agree for most
   // apps but not all (measured: 5 of the 24 entries declaring StartupWMClass use
-  // a class that is not their icon name). A drop-in whose name differs from the
-  // class simply is not found here and the tile keeps its glyph -- drop a second
-  // copy named for the class if you want it in both places.
+  // a class that is not their icon name). This used to say a drop-in whose name
+  // differs from the class is simply not found, which classIndex below has made
+  // untrue: iconFor tries the class here, then follows the desktop entry that
+  // names the class (StartupWMClass or file id) to its Icon= and tries THAT
+  // here too, before anything else. So a drop-in named for the Icon= is found
+  // either way; a second copy named for the class is needed only where no entry
+  // names the class at all.
   //
   // Icon index: one directory listing at launch, cached for the session.
   //

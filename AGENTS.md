@@ -2,12 +2,22 @@
 
 `icons/` holds 100 marks — app icons and CLI/agent logos, including Ghostty's own.
 
-**Five are theme-dependent and it is known.** `cups`, `gh`, `grok` and `jq` are
-near-black and barely register on a dark card; `mise` is near-white and barely
-registers on a light one. They were authored as silhouettes for a surface that
-repaints them, and nothing here recolours. Measured, not guessed: compositing
-each over #1E1E1E and #FFFFFF shifts the card by under 0.02. Giving them a
-colour means editing artwork, which is a decision, not a fix.
+**Five are theme-dependent and it is known.** `cups`, `gh` and `jq` are
+near-black and barely register on a dark card; `mise` is near-white and `grok`
+pure white, and those two barely register on a light one. They were authored as
+silhouettes for a surface that repaints them, and nothing here recolours.
+Measured, not guessed: compositing each over #1E1E1E (the black three) or
+#FFFFFF (the white two) shifts the card by under 0.02 — 0.010 at most (`jq`),
+0 for `grok` and `mise`. Giving them a colour means editing artwork, which is a
+decision, not a fix.
+
+`grok` was listed with the black ones while it carried a full-canvas `#0a0a0a`
+rect behind its white slash. That rect was a bug, not artwork: the repainting
+surface it was authored for rewrote rect and slash to one colour and drew a
+solid square. It was deleted on 2026-10-09 and the `viewBox` tightened to the
+slash, in this copy and the dotfiles repo's alike, which is what moved it to
+the white side.
+
 `icon-aliases.json` maps a command name to an icon name when the two differ.
 
 **An icon is the source of truth for its own appearance.** The plugin draws it
@@ -34,9 +44,10 @@ so all of them render at the same size.
 74% × 74% of its box, because a solid blocky mark reads heavier than the
 thin-stroked marks beside it. The measurement below prints a `viewBox` for it
 exactly as it does for a mark that was padded by accident, so that line is the
-script working rather than a finding. The file says so itself, in an XML comment
-above its `<svg>` tag — the one thing in an icon file that is neither artwork nor
-`viewBox`. **A comment must not contain `--`**: XML forbids a double hyphen
+script working rather than a finding: `19.8187 19.8187 111.3625 111.3625`, the
+file's own `20 20 111 111` plus one rasterised pixel of antialiasing a side.
+The file says so itself, in an XML comment above its `<svg>` tag — the one
+thing in an icon file that is neither artwork nor `viewBox`. **A comment must not contain `--`**: XML forbids a double hyphen
 inside one, and both QtSvg and rsvg then reject the whole document, which here
 means a tile that silently keeps its Nerd Font glyph.
 
@@ -51,7 +62,9 @@ python3 - icons/new.svg <<'PY'
 import re, subprocess, sys
 p = sys.argv[1]
 s = open(p, encoding="utf-8", errors="replace").read()
-m = re.search(r'''viewBox\s*=\s*["']([^"']+)["']''', s)   # quote-agnostic: Inkscape single-quotes
+s = re.sub(r'<!--.*?-->', '', s, flags=re.S)   # a comment can quote a viewBox: pi's does
+# The ROOT's viewBox, not the first in the file. Quote-agnostic: Inkscape single-quotes.
+m = re.search(r'''<svg\b[^>]*?\bviewBox\s*=\s*["']([^"']+)["']''', s, re.S)
 minx, miny, w, h = [float(x) for x in re.split(r'[\s,]+', m.group(1).strip())]
 S = max(1.0, 800.0 / max(w, h)); W, H = round(w*S), round(h*S)
 subprocess.run(["rsvg-convert","-w",str(W),"-h",str(H),p,"-o","/tmp/_i.png"], check=True)
@@ -75,6 +88,12 @@ PY
 Rewrite **only the `<svg>` tag** with what it prints, and take the `width`/`height`
 with the `viewBox` — if they disagree with the new canvas, rsvg reintroduces the
 original aspect and the change does nothing.
+
+It reads the **root `<svg>` element's** `viewBox`, with comments stripped
+first. It used to take the first `viewBox=` anywhere in the file, and `pi`'s
+comment quotes one, so for `pi` it printed `34.5688 34.5688 81.8625 81.8625` —
+a box from the wrong origin and scale. The other 99 marks read the same either
+way.
 
 Two guards, and a mark with a background needs both. The full-bleed test catches
 a background reaching the canvas edge. It does *not* catch one with **rounded
@@ -130,8 +149,22 @@ Searched in order; first hit wins.
 
 ## Naming, and the alias file
 
-Name the file after what it identifies: a window's **class** for an app tile
-(`cursor.svg`), or the **command** for a terminal's process icon (`gh.svg`).
+Name the file after what it identifies: for an app tile, the `Icon=` of the
+desktop entry that names the window's class (`co.anysphere.cursor.svg`), or the
+class itself where no entry names it; the **command** for a terminal's process
+icon (`gh.svg`).
+
+`iconFor()` tries the class against the drop-in index first, but then follows
+`classIndex` — entries keyed by `StartupWMClass` and file id — to the entry's
+`Icon=` before it tries the class anywhere else. So with Cursor installed, its
+tile (class `cursor`, `cursor.desktop`: `StartupWMClass=Cursor`,
+`Icon=co.anysphere.cursor`) draws whatever `co.anysphere.cursor` resolves to —
+the dotfiles repo's copy under `~/.icons/cllpse-color/apps/` on that machine
+(verified live, 2026-10-09), the vendor's own
+`/usr/share/pixmaps/co.anysphere.cursor.png` on one without it, since installed
+icons outrank `icons/` here — and `cursor.svg` is never what it draws. That file
+is reached as a process icon for a terminal titled `cursor`, or where no
+installed entry names the class.
 
 Where the name and the icon disagree, the mapping lives in
 [`icon-aliases.json`](icon-aliases.json) — `claude` → `claude-code` is there,

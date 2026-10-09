@@ -13,6 +13,8 @@
   "ffprobe": "ffmpeg",
   "magick": "imagemagick",
   "convert": "imagemagick",
+  "brew": "homebrew",
+  "pacman": "arch-pacman",
   "ytm": "youtube-music",
   "youtuimusic": "youtube-music",
 

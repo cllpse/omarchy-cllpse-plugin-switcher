@@ -28,7 +28,7 @@
 --   ignore_alpha = 0.6,
 -- })
 
--- Fade the strip in as it maps, over layersIn, and out over layersOut.
+-- Fade the strip in as it maps, over fadeLayersIn, and out over fadeLayersOut.
 -- Hyprland would do that anyway -- Omarchy's no_anim list does not name this
 -- namespace -- so this states it, and makes it win over any broader no_anim
 -- rule loaded earlier.

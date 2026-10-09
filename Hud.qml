@@ -159,7 +159,7 @@ Item {
   // Whether the strip dims the desktop behind the card. Off: the card sits
   // straight on the desktop, separated from it by its border alone.
   //
-  // The scrim it switches is intact below -- the menu's own colour, its 120ms
+  // The scrim it switches is intact below -- the menu's own colour, its 60ms
   // fade-in -- and drawn exactly as it was the moment this is true. It is off by
   // choice, not removed, so turning it back on is this one line. One thing has
   // moved since it was last on: the compositor fades the whole strip in again,
@@ -170,6 +170,29 @@ Item {
   // MouseArea that fills it, neither of which is the scrim, so clicking beside
   // the card still dismisses the strip with this off.
   readonly property bool showScrim: false
+
+  // Every timed animation the strip runs itself -- the scrim's fade-in and the
+  // selection's fade -- shares this duration and curve, so they cannot drift
+  // apart.
+  //
+  // The curve is Hyprland's `default` bezier, cubic-bezier(0, 0.75, 0.15, 1),
+  // the root of the compositor's animation tree (`hyprctl animations` lists
+  // it). It covers about three quarters of the change in the first frame and
+  // settles over the rest. BezierSpline takes both control points, then the
+  // end point, (1, 1). The duration matches the compositor's
+  // fadeLayersIn/fadeLayersOut, the 60ms fade that opens and closes the whole
+  // strip.
+  //
+  // Both were 120ms (scrim) and 140ms (selection) on Easing.OutCubic, which is
+  // Omarchy's own QML range for a fade (PopupCard.qml, KeyboardPanel.qml,
+  // WidgetButton.qml). They now follow the desktop's 60ms instead of the
+  // shell's 110-140ms.
+  //
+  // Not covered: the wheel's kinetic scroll. That is Flickable's flick(),
+  // which decelerates at a constant rate (flickDeceleration on the list) and
+  // takes no duration or curve.
+  readonly property int animDuration: 60
+  readonly property var animCurve: [0, 0.75, 0.15, 1, 1, 1]
 
   // ── Input path ──────────────────────────────────────────────────────────────
   //
@@ -2426,16 +2449,20 @@ Item {
       // scrim switched off -- which left nothing to fade, so the whole-surface
       // fade came back.
       //
-      // 120ms on OutCubic, Omarchy's own curve for a QML fade
-      // (PopupCard.qml, KeyboardPanel.qml) at the short end of its 110-140ms.
+      // root.animDuration on root.animCurve: 60ms on Hyprland's `default`
+      // curve. It was 120ms on OutCubic, Omarchy's own curve for a QML fade.
       //
       // There is no fade-out. `opened` going false unmaps the window in the same
       // frame, so the ramp back to 0 runs off screen. That is also what resets
       // it: the next open starts from nothing, or from wherever it had got to if
-      // the strip was reopened inside those 120ms.
+      // the strip was reopened inside those 60ms.
       opacity: root.opened ? 1 : 0
       Behavior on opacity {
-        NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+        NumberAnimation {
+          duration: root.animDuration
+          easing.type: Easing.BezierSpline
+          easing.bezierCurve: root.animCurve
+        }
       }
     }
 
@@ -2748,8 +2775,10 @@ Item {
             // beneath it, and so the cell's own drag dim above carries it
             // without a second opacity term here.
             //
-            // 140ms on OutCubic: Omarchy's own opacity fade for a hovered
-            // widget (WidgetButton.qml), the same both ways.
+            // root.animDuration on root.animCurve (60ms on Hyprland's
+            // `default` curve), the same both ways. It was 140ms on OutCubic,
+            // Omarchy's own opacity fade for a hovered widget
+            // (WidgetButton.qml).
             //
             // A slide was tried first -- one surface beneath the list, moving
             // between tiles -- and dropped for this.
@@ -2770,7 +2799,11 @@ Item {
 
               Behavior on opacity {
                 enabled: root.opened
-                NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+                NumberAnimation {
+                  duration: root.animDuration
+                  easing.type: Easing.BezierSpline
+                  easing.bezierCurve: root.animCurve
+                }
               }
             }
 

@@ -161,7 +161,10 @@ Item {
   //
   // The scrim it switches is intact below -- the menu's own colour, its 120ms
   // fade-in -- and drawn exactly as it was the moment this is true. It is off by
-  // choice, not removed, so turning it back on is this one line.
+  // choice, not removed, so turning it back on is this one line. One thing has
+  // moved since it was last on: the compositor fades the whole strip in again,
+  // so the scrim would fade with the card, and its own fade on top of that --
+  // see the note on the scrim for what to change if that is not what you want.
   //
   // Hidden, not dropped: the click-away is the window's input region and the
   // MouseArea that fills it, neither of which is the scrim, so clicking beside
@@ -2399,18 +2402,24 @@ Item {
       visible: root.showScrim
       color: Color.menu.scrim
 
-      // The one thing on this surface that animates. The card lands at full
-      // opacity under the keypress, and the dim eases in behind it.
+      // The scrim's own fade-in, written for a surface the compositor does NOT
+      // fade: the card lands at full opacity under the keypress and the dim
+      // eases in behind it. Only QML can do that split -- a card and its scrim
+      // are one layer surface, so a compositor fade takes both or neither.
       //
-      // Only QML can do that split. A card and its scrim are one layer surface,
-      // so a compositor fade takes both or neither, which is why
-      // hypr/window-switcher-looknfeel.lua sets no_anim on this namespace: a
-      // layer fade there would stack on top of this one and fade the card too.
+      // That is not the current arrangement. The scrim is off (showScrim), and
+      // hypr/window-switcher-looknfeel.lua fades the whole strip in, as the menu
+      // and the other keyboard-driven panels are. Turned on as things stand,
+      // the scrim fades with the card and this ramp runs on top of that one, so
+      // the dim lands a little behind the card. For the split instead, switch
+      // that layer rule to no_anim = true, animation = "none"; this needs no
+      // change either way.
       //
-      // This is the second time it has been done this way. It shipped like this,
-      // then moved to the whole-surface fade the menu and the other
-      // keyboard-driven panels use, for consistency with them. A card that
-      // ramps in reads as slower than one that is simply there, so it came back.
+      // The history: it shipped as the split, moved to the whole-surface fade
+      // for consistency with the panels, came back out because a card that
+      // ramps in reads as slower than one that is simply there, and then had its
+      // scrim switched off -- which left nothing to fade, so the whole-surface
+      // fade came back.
       //
       // 120ms on OutCubic, Omarchy's own curve for a QML fade
       // (PopupCard.qml, KeyboardPanel.qml) at the short end of its 110-140ms.
@@ -3428,7 +3437,7 @@ Item {
   //
   // Their own namespace, deliberately not the HUD's. The layer rules in
   // hypr/window-switcher-looknfeel.lua match ^omarchy-window-switcher-hud$
-  // exactly, so blur and no_anim apply to the card and skip these -- which
+  // exactly, so blur and the map fade apply to the card and skip these -- which
   // is what you want for four invisible pixels that are mapped for the whole
   // session.
   //

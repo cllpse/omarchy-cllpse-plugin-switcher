@@ -1,8 +1,7 @@
 -- Window Switcher (cllpse.window-switcher) -- appearance. OPTIONAL.
 --
 -- Append to ~/.config/hypr/looknfeel.lua. Without it the switcher still works;
--- it just will not blur the way Omarchy's own panels do, and the compositor
--- fades the whole strip in, card included.
+-- it just will not blur the way Omarchy's own panels do.
 --
 -- Omarchy blurs its own panels through a layer rule matching a fixed list of
 -- namespaces, which a third-party namespace cannot join, and opts them out of
@@ -20,14 +19,17 @@ hl.layer_rule({
   ignore_alpha = 0.6,
 })
 
--- No compositor fade, in or out: the card lands under the keypress. With
--- showScrim on in Hud.qml, the scrim still fades in -- Hud.qml animates it
--- itself -- which the compositor cannot do, because a card and its scrim are
--- one layer surface. A layer fade here would stack on top of that one and take
--- the card with it. With it off, as it ships, the strip opens with no fade at
--- all.
+-- Fade the strip in as it maps, over layersIn, and out over layersOut.
+-- Hyprland would do that anyway -- Omarchy's no_anim list does not name this
+-- namespace -- so this states it, and makes it win over any broader no_anim
+-- rule loaded earlier.
+--
+-- A card and its scrim are one layer surface, so this fades both. The scrim is
+-- off by default (showScrim in Hud.qml); turned on, it also runs its own QML
+-- fade on top of this one. To have the card land instantly with only the scrim
+-- fading, make this no_anim = true, animation = "none" instead.
 hl.layer_rule({
   match = { namespace = "^omarchy-window-switcher-hud$" },
-  no_anim = true,
-  animation = "none",
+  no_anim = false,
+  animation = "fade",
 })

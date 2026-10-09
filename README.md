@@ -90,6 +90,7 @@ writes nothing else: no state files, no edits to `shell.json` beyond the entry
 | release `SUPER` | focus the highlighted window |
 | pointer into **any screen corner** | open the strip, no key held |
 | move the pointer | highlight the tile under it |
+| scroll wheel | scroll the strip sideways when it is wider than the card, gliding to a stop like an ordinary list |
 | `SUPER` + click a tile | focus that window |
 | `SUPER` + click beside the card | dismiss without switching |
 | `SUPER` + drag a tile | move that window to the workspace you drop on |

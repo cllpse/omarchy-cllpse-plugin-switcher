@@ -1909,6 +1909,10 @@ Item {
 
     root.index = ((idx % n) + n) % n
     root.pendingSteps = 0
+    // A glide left over from the last open would otherwise finish under this
+    // one. positionViewAtIndex() would cancel it, but only runs when the index
+    // actually changes.
+    list.cancelFlick()
     root.opened = true
     idleTimer.restart()
   }
@@ -2668,6 +2672,16 @@ Item {
         spacing: card.gap
         interactive: false
         clip: true
+        // For the wheel's kinetic scroll, which goes through flick() -- see
+        // tiles.onWheel. flick() decelerates by flickDeceleration, the TOUCH
+        // figure (1500 by default), where Flickable's own wheel path uses its
+        // private wheelDeceleration, 15000. Set to the latter so the strip
+        // glides exactly as far as the SUPER+SPACE supermenu's list does for the
+        // same wheel input; at 1500 it coasts ten times as far.
+        flickDeceleration: 15000
+        // A flick that reaches an end stops there, as the supermenu's does,
+        // rather than overshooting and springing back.
+        boundsBehavior: Flickable.StopAtBounds
         // Retain every cell, even one sitting a fraction of a pixel outside the
         // viewport. Without this the rightmost delegate is culled and rebuilt on
         // each open (measured: destroy 2 / create 2, every time), and a rebuilt
@@ -3235,6 +3249,10 @@ Item {
         function lx(x) { return x + list.contentX - list.originX }
 
         onPressed: function (mouse) {
+          // A press stops a glide, as it does on an interactive Flickable --
+          // otherwise the strip carries on moving under a held button and the
+          // tile released on is not the one pressed.
+          list.cancelFlick()
           tiles.pressX = mouse.x
           tiles.pressY = mouse.y
           var i = root._cellAt(tiles.lx(mouse.x))
@@ -3302,16 +3320,74 @@ Item {
         // is the only one most mice have. A real horizontal wheel or a
         // trackpad's sideways gesture arrives as angleDelta.x and is preferred
         // when it is non-zero.
+        //
+        // Kinetic, the way the supermenu's list scrolls. That list is an
+        // interactive Flickable and the wheel goes through Flickable's own
+        // wheelEvent, which does not move by the delta: it turns the delta and
+        // the time since the last event into a velocity, averages the last three,
+        // and flicks -- so a high-resolution wheel's stream of small events
+        // glides instead of stepping. This used to move contentX by the raw
+        // delta, an instant jump per event.
+        //
+        // Flickable's path cannot be used directly. It flicks horizontally only
+        // on angleDelta.x (qquickflickable.cpp, wheelEvent, Qt 6.11.2), so a
+        // vertical wheel over a horizontal list does nothing; and with
+        // `interactive` true it would take the wheel before this could remap
+        // it. So this reproduces its arithmetic and hands the result to the
+        // public flick(), which runs the same deceleration timeline and does not
+        // check `interactive`:
+        //
+        //  - At rest, the first event of a burst gets Qt's notional interval,
+        //    120 / sqrt(2 * deceleration * notchDistance), so one detent on its
+        //    own travels exactly notchDistance -- wheelScrollLines * 24, as
+        //    Flickable's initialWheelFlickDistance is.
+        //  - While moving, the real interval since the last event.
+        //  - Velocity clamped to maximumFlickVelocity, averaged over the last
+        //    three samples (QML_FLICK_SAMPLEBUFFER), restarted on a change of
+        //    direction. flick() resets Flickable's own buffer on every call,
+        //    which is why the samples are kept here. They are also dropped at
+        //    rest, where Flickable keeps them; a burst starting cold should not
+        //    inherit the speed of the last one.
+        //
+        // positionViewAtIndex() cancels a flick (it calls cancelFlick()) and so
+        // does any direct write to contentX (it resets the timeline), so TAB
+        // stepping and the drag auto-scroll still take over cleanly mid-glide.
+        readonly property real wheelNotchDistance: Qt.styleHints.wheelScrollLines * 24
+        property real wheelLastMs: 0
+        property var wheelSamples: []
+
         onWheel: function (wheel) {
           if (list.contentWidth <= list.width) { wheel.accepted = false; return }
           var d = wheel.angleDelta.x !== 0 ? wheel.angleDelta.x : wheel.angleDelta.y
           if (d === 0) { wheel.accepted = false; return }
-          var max = list.originX + list.contentWidth - list.width
-          list.contentX = Math.max(list.originX, Math.min(max, list.contentX - d))
           wheel.accepted = true
           // Scrolling is activity: it should hold the strip open the same way
           // stepping or dragging does.
           idleTimer.restart()
+
+          var now = Date.now()
+          var elapsed = (now - tiles.wheelLastMs) / 1000
+          tiles.wheelLastMs = now
+          var samples = tiles.wheelSamples
+          if (!list.moving) {
+            elapsed = 120 / Math.sqrt(list.flickDeceleration * 2 * tiles.wheelNotchDistance)
+            samples = []
+          } else if (elapsed <= 0) {
+            return // same millisecond as the last event: no interval to divide by
+          }
+
+          var vmax = list.maximumFlickVelocity
+          var v = Math.max(-vmax, Math.min(vmax, d / elapsed))
+          if (samples.length > 0 && (samples[samples.length - 1] < 0) !== (v < 0)) samples = []
+          samples.push(v)
+          if (samples.length > 3) samples.shift()
+          tiles.wheelSamples = samples
+
+          var sum = 0
+          for (var i = 0; i < samples.length; i++) sum += samples[i]
+          // Positive velocity moves content toward its start, as a positive
+          // delta always has here (contentX - d).
+          list.flick(sum / samples.length, 0)
         }
       }
 

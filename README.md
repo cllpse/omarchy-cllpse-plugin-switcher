@@ -310,7 +310,7 @@ from a theme's `[spacing]` section if you want them different:
 | token | default | what it sets |
 |---|---|---|
 | `switcher-cell-width` | 150 | tile width |
-| `switcher-group-gap` | 36 | extra space between workspace groups |
+| `switcher-group-gap` | derived | extra space between workspace groups; by default sized so a group's divider sits `switcher-card-padding` from the tiles either side, as the border does |
 | `switcher-row-height` | 104 | tile height floor |
 | `switcher-card-padding` | 6 | space between the card's border and the tiles |
 

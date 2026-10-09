@@ -2469,7 +2469,31 @@ Item {
       // groups rather than one run. Tiles stay a uniform width; only the space
       // before a group's first tile grows, which is why _cellX below has to do
       // the arithmetic the ListView's own uniform `spacing` cannot.
-      readonly property int groupGap: Style.spacingToken("switcher-group-gap", 36)
+      //
+      // Sized so the space either side of a group's rule is the card's own
+      // padding. The rule runs the card's full height and divides it the way
+      // the border bounds it, so a tile sits as far from a rule as from the
+      // border: the whole run between two groups is padding + stroke + padding,
+      // and groupGap is that less the ordinary tile gap already in it.
+      //
+      // It was a flat 36 (39 at text size 13), from when the card's padding
+      // was the menu's 20: ~19.5 a side, which matched. Taking the padding down
+      // to 7 for a concentric highlight corner left the rules sitting in nearly
+      // three times the margin the border had. Deriving it keeps the two in
+      // step through any later change to either.
+      //
+      // `switcher-group-gap` still wins when a theme sets it, taken raw as
+      // spacingToken takes any override; only the default is derived.
+      readonly property int groupGap:
+        Style.spacingOverrides["switcher-group-gap"] !== undefined
+          ? Style.spacingToken("switcher-group-gap", 0)
+          : Math.max(0, Math.round(card.padding * 2 + card.ruleStroke - card.gap))
+
+      // The group rules' stroke. Lives here rather than on the rule, because
+      // groupGap above is built around it. 3x the theme's hairline: it has
+      // climbed 1 -> 1.5 -> 3, since at full card height a hairline reads as a
+      // hesitation rather than a division.
+      readonly property real ruleStroke: Math.max(1, Style.normalBorderWidth) * 3
       // Same shape as Menu.qml's baseRowHeight/detailRowHeight: a floor, raised
       // if the stacked contents need more. Keeps the cell honest when
       // `omarchy display text size` grows the font tokens.
@@ -3072,10 +3096,8 @@ Item {
 
           delegate: Rectangle {
             id: groupRule
-            // 3x the theme's hairline. It has climbed 1 -> 1.5 -> 3: at full
-            // card height a hairline reads as a hesitation rather than a
-            // division, and the gap it sits in is 32px, so there is room.
-            readonly property real stroke: Math.max(1, Style.normalBorderWidth) * 3
+            // See card.ruleStroke, and card.groupGap for the space around it.
+            readonly property real stroke: card.ruleStroke
             visible: root._groupStart(index)
             // Centred in the gap between the two tiles, and centred on its own
             // stroke within that.

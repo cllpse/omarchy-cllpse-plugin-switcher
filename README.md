@@ -57,8 +57,10 @@ It unbinds Omarchy's default `SUPER+TAB` (next workspace) first.
 
 Optionally append
 [`hypr/window-switcher-looknfeel.lua`](hypr/window-switcher-looknfeel.lua) to
-`~/.config/hypr/looknfeel.lua` for blur matching Omarchy's own panels and a
-fade as the strip opens and closes:
+`~/.config/hypr/looknfeel.lua` for a fade as the strip opens and closes. It
+deliberately leaves blur off: on a full-screen layer it halves the frame rate of
+every animation, and an opaque card has nothing to blur. The file explains, and
+carries the rule commented out:
 
 ```bash
 cat ~/.config/omarchy/plugins/cllpse.window-switcher/hypr/window-switcher-looknfeel.lua \

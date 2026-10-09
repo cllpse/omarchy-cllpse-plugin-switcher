@@ -1,23 +1,32 @@
 -- Window Switcher (cllpse.window-switcher) -- appearance. OPTIONAL.
 --
 -- Append to ~/.config/hypr/looknfeel.lua. Without it the switcher still works;
--- it just will not blur the way Omarchy's own panels do.
+-- it just opens and closes without a fade.
 --
--- Omarchy blurs its own panels through a layer rule matching a fixed list of
--- namespaces, which a third-party namespace cannot join, and opts them out of
--- the compositor's map fade through another. These two rules put the switcher
--- in the same company. A later layer rule wins over an earlier one, so this
--- needs no edit to any Omarchy file.
-hl.layer_rule({
-  match = { namespace = "^omarchy-window-switcher-hud$" },
-  blur = true,
-  blur_popups = true,
-  -- The card's scrim sits below this, so it renders unblurred and the windows
-  -- being switched between stay readable. (The scrim is off by default --
-  -- showScrim in Hud.qml -- in which case nothing behind the card is drawn at
-  -- all.)
-  ignore_alpha = 0.6,
-})
+-- A later layer rule wins over an earlier one, so this needs no edit to any
+-- Omarchy file.
+
+-- Blur is deliberately NOT applied, though Omarchy blurs its own panels.
+--
+-- The switcher is a full-screen layer, and blurring one costs the compositor a
+-- full-screen blur on every frame that changes -- every frame of the open fade
+-- and of the highlight fading between tiles. Measured with Qt's render-loop
+-- timing while the highlight faded on a 120Hz output: frames every 16-17ms
+-- (60 fps) with this rule, every 8ms (120 fps) without it, Qt itself rendering
+-- in ~0ms either way. And it buys nothing while the card is opaque, as it is
+-- under Omarchy's own menu colours: an opaque pixel has nothing to blur
+-- through, and the transparent rest is under ignore_alpha.
+--
+-- If your theme makes the menu translucent and you want the card frosted,
+-- uncomment this, knowing the frame rate is the price. The scrim (off by
+-- default, showScrim in Hud.qml) sits under ignore_alpha, so it stays sharp.
+--
+-- hl.layer_rule({
+--   match = { namespace = "^omarchy-window-switcher-hud$" },
+--   blur = true,
+--   blur_popups = true,
+--   ignore_alpha = 0.6,
+-- })
 
 -- Fade the strip in as it maps, over layersIn, and out over layersOut.
 -- Hyprland would do that anyway -- Omarchy's no_anim list does not name this

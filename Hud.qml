@@ -2393,10 +2393,11 @@ Item {
     // light -- so a theme switch, or a retune of the menu's scrim, carries the
     // switcher with it. Change it in shell.menu.toml, not here.
     //
-    // Still below the layer rule's ignore_alpha (0.6) in
-    // hypr/window-switcher-looknfeel.lua -- 0.25 is further below it than
-    // 0.35 was -- so the scrim stays unblurred and the windows being switched
-    // between remain readable.
+    // Below the blur rule's ignore_alpha (0.6) -- 0.25 is further below it than
+    // 0.35 was -- so the scrim would stay unblurred if that rule were on. It is
+    // off: hypr/window-switcher-looknfeel.lua carries it commented out, since
+    // blurring this full-screen layer halved its frame rate for nothing while
+    // the card is opaque.
     Rectangle {
       anchors.fill: parent
       visible: root.showScrim
@@ -3476,9 +3477,9 @@ Item {
   //
   // Their own namespace, deliberately not the HUD's. The layer rules in
   // hypr/window-switcher-looknfeel.lua match ^omarchy-window-switcher-hud$
-  // exactly, so blur and the map fade apply to the card and skip these -- which
-  // is what you want for four invisible pixels that are mapped for the whole
-  // session.
+  // exactly, so the map fade (and blur, if enabled) apply to the card and skip
+  // these -- which is what you want for four invisible pixels that are mapped
+  // for the whole session.
   //
   // One delegate rather than four near-identical blocks: the only thing that
   // differs between corners is which pair of edges it anchors to.

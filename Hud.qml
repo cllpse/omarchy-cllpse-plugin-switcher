@@ -2385,24 +2385,30 @@ Item {
       anchors.fill: parent
       color: Color.menu.scrim
 
-      // No fade here: the compositor owns it now.
+      // The one thing on this surface that animates. The card lands at full
+      // opacity under the keypress, and the dim eases in behind it.
       //
-      // This ran a 120ms / OutCubic Behavior so the scrim eased in while the
-      // card landed instantly under the keypress -- the compositor cannot fade
-      // a card and its scrim separately, they are one layer surface. The side
-      // effect was that the switcher was the only surface in the shell whose
-      // CONTENT did not ramp, which read as noticeably faster than the Omarchy
-      // panels beside it.
+      // Only QML can do that split. A card and its scrim are one layer surface,
+      // so a compositor fade takes both or neither, which is why
+      // hypr/window-switcher-looknfeel.lua sets no_anim on this namespace: a
+      // layer fade there would stack on top of this one and fade the card too.
       //
-      // hypr/window-switcher-looknfeel.lua now puts this namespace in the
-      // same `animation = "fade"` layer rule as the menu and the other
-      // keyboard-driven panels, so the whole surface ramps over layersIn's
-      // 133ms on easeOutQuint. A Behavior here would stack on top of that.
+      // This is the second time it has been done this way. It shipped like this,
+      // then moved to the whole-surface fade the menu and the other
+      // keyboard-driven panels use, for consistency with them. A card that
+      // ramps in reads as slower than one that is simply there, so it came back.
       //
-      // The binding stays. `opened` going false unmaps the window in the same
-      // frame, so on screen this only ever evaluates to 1, but it keeps the
-      // scrim tied to the same state the rest of this file reads.
+      // 120ms on OutCubic, Omarchy's own curve for a QML fade
+      // (PopupCard.qml, KeyboardPanel.qml) at the short end of its 110-140ms.
+      //
+      // There is no fade-out. `opened` going false unmaps the window in the same
+      // frame, so the ramp back to 0 runs off screen. That is also what resets
+      // it: the next open starts from nothing, or from wherever it had got to if
+      // the strip was reopened inside those 120ms.
       opacity: root.opened ? 1 : 0
+      Behavior on opacity {
+        NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+      }
     }
 
     // Card: same chrome as an Omarchy menu — theme menu background, the
@@ -3408,7 +3414,7 @@ Item {
   //
   // Their own namespace, deliberately not the HUD's. The layer rules in
   // hypr/window-switcher-looknfeel.lua match ^omarchy-window-switcher-hud$
-  // exactly, so blur and the map fade apply to the card and skip these -- which
+  // exactly, so blur and no_anim apply to the card and skip these -- which
   // is what you want for four invisible pixels that are mapped for the whole
   // session.
   //

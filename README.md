@@ -130,7 +130,8 @@ over work aimed somewhere else.
 Two things it costs, both deliberate:
 
 - The four corner pixels no longer pass clicks through to what is behind them.
-  With Omarchy's default gaps the nearest window corner is 26px in, so what is
+  With Omarchy's default gaps the nearest window corner is 12px in (`gaps_out`
+  10 plus a 2px border; 26 under omarchy-cllpse-macos's 24px gaps), so what is
   behind them is the wallpaper.
 - It stands down while a window on the focused workspace is fullscreen, so a
   video or a game cannot be interrupted by a pointer thrown into a corner.
@@ -282,7 +283,7 @@ a table of two rows, four strings each. A third family is a row, not a code
 path. The sweep descends three levels below a hidden top-level directory of
 `$HOME`, which reaches `.config/chromium/Default` and
 `.mozilla/firefox/x.default` as well as Brave's deeper
-`.config/BraveSoftware/Brave-Browser/Default`. A flatpak profile sits one level
+`.config/BraveSoftware/Brave-Browser/Default`. A flatpak profile sits two levels
 deeper still and is deliberately not found.
 
 **What it cannot do**, each ending as no badge rather than a wrong one: an

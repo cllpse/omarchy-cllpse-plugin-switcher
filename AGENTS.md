@@ -167,7 +167,9 @@ draw-it-as-it-comes rule with a process icon and **nothing else in this
 document**: it comes from a database rather than a file, it is never on disk
 (it reaches QML as a `data:` URL), it has no name to alias, and there is no
 `viewBox` to scale. Do not add one to `icons/`. Do not "fix" one that looks
-soft — Chromium caches nothing above 32px and the badge draws at 36 device px.
+soft — Chromium caches nothing above 32px and the badge draws at 21px
+(`processIconSize`, at text size 13), 42 device px at a pixel ratio of 2; it
+was 36 before the tile icon moved to the `display` token.
 
 **The constraint that matters more than any other: this reads a browsing-history
 database.** Three rules keep that defensible, and each is a real limit on what

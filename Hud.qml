@@ -159,7 +159,7 @@ Item {
   // Whether the strip dims the desktop behind the card. Off: the card sits
   // straight on the desktop, separated from it by its border alone.
   //
-  // The scrim it switches is intact below -- the menu's own colour, its 60ms
+  // The scrim it switches is intact below -- the menu's own colour, its 58ms
   // fade-in -- and drawn exactly as it was the moment this is true. It is off by
   // choice, not removed, so turning it back on is this one line. One thing has
   // moved since it was last on: the compositor fades the whole strip in again,
@@ -180,18 +180,19 @@ Item {
   // it). It covers about three quarters of the change in the first frame and
   // settles over the rest. BezierSpline takes both control points, then the
   // end point, (1, 1). The duration matches the compositor's
-  // fadeLayersIn/fadeLayersOut, the 60ms fade that opens and closes the whole
-  // strip.
+  // fadeLayersIn/fadeLayersOut, the fade that opens and closes the whole strip:
+  // 7 frames at the TV's 120Hz, 58.3ms, which QML takes as a whole 58
+  // (looknfeel-decoration.lua's animation block has the frame arithmetic).
   //
   // Both were 120ms (scrim) and 140ms (selection) on Easing.OutCubic, which is
   // Omarchy's own QML range for a fade (PopupCard.qml, KeyboardPanel.qml,
-  // WidgetButton.qml). They now follow the desktop's 60ms instead of the
-  // shell's 110-140ms.
+  // WidgetButton.qml). They then followed the desktop's 60ms instead of the
+  // shell's 110-140ms, and moved to 58 with it on 2026-10-11.
   //
   // Not covered: the wheel's kinetic scroll. That is Flickable's flick(),
   // which decelerates at a constant rate (flickDeceleration on the list) and
   // takes no duration or curve.
-  readonly property int animDuration: 60
+  readonly property int animDuration: 58
   readonly property var animCurve: [0, 0.75, 0.15, 1, 1, 1]
 
   // ── Input path ──────────────────────────────────────────────────────────────
@@ -2497,13 +2498,13 @@ Item {
       // scrim switched off -- which left nothing to fade, so the whole-surface
       // fade came back.
       //
-      // root.animDuration on root.animCurve: 60ms on Hyprland's `default`
+      // root.animDuration on root.animCurve: 58ms on Hyprland's `default`
       // curve. It was 120ms on OutCubic, Omarchy's own curve for a QML fade.
       //
       // There is no fade-out. `opened` going false unmaps the window in the same
       // frame, so the ramp back to 0 runs off screen. That is also what resets
       // it: the next open starts from nothing, or from wherever it had got to if
-      // the strip was reopened inside those 60ms.
+      // the strip was reopened inside those 58ms.
       opacity: root.opened ? 1 : 0
       Behavior on opacity {
         NumberAnimation {
@@ -2823,7 +2824,7 @@ Item {
             // beneath it, and so the cell's own drag dim above carries it
             // without a second opacity term here.
             //
-            // root.animDuration on root.animCurve (60ms on Hyprland's
+            // root.animDuration on root.animCurve (58ms on Hyprland's
             // `default` curve), the same both ways. It was 140ms on OutCubic,
             // Omarchy's own opacity fade for a hovered widget
             // (WidgetButton.qml).

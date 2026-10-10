@@ -2604,7 +2604,7 @@ Item {
 
       // The floor is a named token for the same reason cellW is: it is what
       // actually decides tile height. The computed side sits well under it
-      // (89 against 104 at the default base), so the floor wins outright and a
+      // (87 against 104 at the default base), so the floor wins outright and a
       // theme with no say over it has no say over the tile.
       //
       // Style.spacing.xs rather than Style.space(3): identical by default, but
@@ -2613,17 +2613,17 @@ Item {
       // gaps -- so they have to move together with it, not with a literal.
       readonly property int rowH: Math.max(
         Style.spacingToken("switcher-row-height", 104),
-        card.iconSize + Style.font.heading + Style.font.title
+        card.iconSize + Style.font.title * 2
           + Style.spacing.xs * 2 + card.iconTitleTopUp + Style.spacing.rowPaddingX * 2)
       // In the menu the icon sits inline beside a label (Style.font.iconLarge);
       // here it's the primary element of a card, so it steps up the type scale
       // -- the way a macOS Cmd-Tab tile leads with its icon.
       //
       // `display` is that step -- 24 at the default base, 26 at the 13 in use
-      // here. Nothing sits between it and the line below: the ladder runs
-      // title 14, heading 16, display 24, so the next token DOWN is the same
-      // 16 as the name line beneath the icon, which stops reading as an
-      // icon-led tile.
+      // here. The ladder runs title 14, heading 16, display 24: the next token
+      // down, heading, was the name line's own size until the names moved to
+      // title (2026-10-11), and an icon at its label's size stops reading as
+      // an icon-led tile.
       //
       // It was fontPx(1.667) -- 20 at the default base -- for a while, on the
       // grounds that a tile wanted something between heading and display. That
@@ -2633,7 +2633,7 @@ Item {
       // (20.0 at base 12, but 21.67 -> 22 at 13 and 23.33 -> 23 at 14). A
       // token is exact at every base size by construction.
       //
-      // The tile does not grow with it -- rowH's floor above still wins (89
+      // The tile does not grow with it -- rowH's floor above still wins (87
       // against 104 at the default base), and the mark has a 150-wide cell to
       // sit in.
       readonly property int iconSize: Style.font.display
@@ -2769,9 +2769,9 @@ Item {
         onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
 
         // Styled after an Omarchy menu row (Menu.qml's row delegate): a
-        // BorderSurface at radius = cornerRadius, label in heading/Medium and
-        // the secondary line in title at 0.52 (bumped two token steps up from
-        // the menu's own bodySmall). The menu's selected fill and
+        // BorderSurface at radius = cornerRadius. The label (Medium) and the
+        // secondary line (at 0.52) are both in title, the supermenu's item
+        // size (2026-10-11). The menu's selected fill and
         // selected-border spec are each tile's own `selectionFill`, which
         // fades in and out rather than switching, and the label keeps its
         // colour when selected, unlike a menu row.
@@ -3097,7 +3097,11 @@ Item {
                 elide: Text.ElideRight
                 maximumLineCount: 1
                 font.family: Style.font.menuFamily
-                font.pixelSize: Style.font.heading
+                // The supermenu's item size (its itemTextSize, title), so a
+                // name reads the same in both plugins (2026-10-11). It was
+                // heading, the Omarchy launcher's label size, from when
+                // SUPER+SPACE opened that launcher.
+                font.pixelSize: Style.font.title
                 font.weight: Font.Medium
                 // Static: the selection does not recolour the name. It used to,
                 // to selectedText, the way the launcher's row delegate does
@@ -3135,18 +3139,15 @@ Item {
                 elide: Text.ElideRight
                 maximumLineCount: 1
                 font.family: Style.font.menuFamily
-                // One step above Menu.qml's detail line, which is bodySmall
-                // (Menu.qml:1299, at the same opacity 0.52).
+                // The supermenu's subtitle size: the same title as the name
+                // above, set apart only by the 0.52 opacity, the way the
+                // supermenu sets its context apart by colour (2026-10-11).
                 //
-                // It has been walked down to find this: `title` was two steps
-                // over and read as a different component next to the launcher;
-                // bodySmall matched exactly but sat too quiet under a heading
-                // in a card this wide. `body` is the step between.
-                //
-                // The label above matches the launcher outright -- heading /
-                // Font.Medium / elide, the same as Menu.qml:1286 -- so the
-                // deviation is confined to this line, on purpose.
-                font.pixelSize: Style.font.body
+                // Before that it matched Omarchy's launcher, back when
+                // SUPER+SPACE opened it: walked from title through bodySmall
+                // (Menu.qml:1299's detail line) to body, one step above it,
+                // under a heading name.
+                font.pixelSize: Style.font.title
                 color: Color.menu.text
                 opacity: 0.52
               }
@@ -3633,7 +3634,8 @@ Item {
             : ""
           textFormat: Text.PlainText
           font.family: Style.font.menuFamily
-          font.pixelSize: Style.font.heading
+          // The tile's own name size.
+          font.pixelSize: Style.font.title
           font.weight: Font.Medium
           // The tile's own name colour, which selection no longer changes.
           color: Color.menu.text

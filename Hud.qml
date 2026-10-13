@@ -424,7 +424,7 @@ Item {
 
   // ── Marks the plugin ships itself ───────────────────────────────────────────
   //
-  // 100 app and CLI/agent marks (75 when this was first written) in ONE
+  // 101 app and CLI/agent marks (75 when this was first written) in ONE
   // directory, icons/, so tiles and terminal process icons both work on a
   // machine that has done nothing but install this plugin. Resolved LAST,
   // after the user's own drop-ins and after their installed icon themes, so

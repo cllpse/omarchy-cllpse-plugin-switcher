@@ -1,6 +1,6 @@
 # Working on the icons
 
-`icons/` holds 101 marks — app icons and CLI/agent logos, including Ghostty's own.
+`icons/` holds 102 marks — app icons and CLI/agent logos, including Ghostty's own.
 
 **Five are theme-dependent and it is known.** `cups`, `gh` and `jq` are
 near-black and barely register on a dark card; `mise` is near-white and `grok`

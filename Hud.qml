@@ -488,6 +488,15 @@ Item {
   // Order is load-bearing in two places: "obsidian" must be tested before
   // "obs" (OBS Studio) because the former contains the latter, and the
   // specific libreoffice-* classes before the bare "libreoffice".
+  // VS Code by its real classes: `code` (visual-studio-code-bin), `code-oss`,
+  // `code-url-handler`, `code - insiders`, VSCodium and the Flatpak's
+  // com.visualstudio.code. A bare "contains code" took any class with "code"
+  // in it: T3 Code (com.t3tools.T3Code) read as "VS Code" with the
+  // code-brackets glyph until 2026-10-16. Takes the lowercased class.
+  function _isVsCode(c) {
+    return /^code([-_ ]|$)/.test(c) || c.indexOf("vscod") !== -1 || c.indexOf("visualstudio") !== -1
+  }
+
   function glyphFor(cls) {
     var c = String(cls || "").toLowerCase()
     function has() {
@@ -503,7 +512,7 @@ Item {
     // shows this glyph now. A vector can be dropped in at any time to take it
     // back over.
     else if (has("chromium", "chrome", "helium", "vivaldi", "brave", "edge", "opera")) g = 0xf268
-    else if (has("code", "cursor", "sublime", "jetbrains", "idea", "pycharm", "webstorm", "zed", "vim", "emacs")) g = 0xf121
+    else if (root._isVsCode(c) || has("cursor", "sublime", "jetbrains", "idea", "pycharm", "webstorm", "zed", "vim", "emacs")) g = 0xf121
     else if (has("steam")) g = 0xf1b6
     else if (has("obsidian")) g = 0xf082e                                  // notebook
     else if (has("obs")) g = 0xf03d                                        // video camera
@@ -1428,7 +1437,7 @@ Item {
     else if (has("edge")) return "Edge"
     else if (has("opera")) return "Opera"
     else if (has("cursor")) return "Cursor"
-    else if (has("code")) return "VS Code"
+    else if (root._isVsCode(c)) return "VS Code"
     else if (has("sublime")) return "Sublime Text"
     else if (has("jetbrains", "idea")) return "IntelliJ IDEA"
     else if (has("pycharm")) return "PyCharm"

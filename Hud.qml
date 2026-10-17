@@ -2614,7 +2614,7 @@ Item {
 
       // The floor is a named token for the same reason cellW is: it is what
       // actually decides tile height. The computed side sits well under it
-      // (87 against 104 at the default base), so the floor wins outright and a
+      // (85 against 104 at the default base), so the floor wins outright and a
       // theme with no say over it has no say over the tile.
       //
       // Style.spacing.xs rather than Style.space(3): identical by default, but
@@ -2623,7 +2623,7 @@ Item {
       // gaps -- so they have to move together with it, not with a literal.
       readonly property int rowH: Math.max(
         Style.spacingToken("switcher-row-height", 104),
-        card.iconSize + Style.font.title * 2
+        card.iconSize + Style.font.title + Style.font.body
           + Style.spacing.xs * 2 + card.iconTitleTopUp + Style.spacing.rowPaddingX * 2)
       // In the menu the icon sits inline beside a label (Style.font.iconLarge);
       // here it's the primary element of a card, so it steps up the type scale
@@ -2643,7 +2643,7 @@ Item {
       // (20.0 at base 12, but 21.67 -> 22 at 13 and 23.33 -> 23 at 14). A
       // token is exact at every base size by construction.
       //
-      // The tile does not grow with it -- rowH's floor above still wins (87
+      // The tile does not grow with it -- rowH's floor above still wins (85
       // against 104 at the default base), and the mark has a 150-wide cell to
       // sit in.
       readonly property int iconSize: Style.font.display
@@ -3149,15 +3149,17 @@ Item {
                 elide: Text.ElideRight
                 maximumLineCount: 1
                 font.family: Style.font.menuFamily
-                // The supermenu's subtitle size: the same title as the name
-                // above, set apart only by the 0.52 opacity, the way the
-                // supermenu sets its context apart by colour (2026-10-11).
+                // A step under the name (2026-10-17), as every detail line
+                // stacked under a name is in Omarchy (Menu.qml:1299 sets
+                // bodySmall under heading). The supermenu sets its context at
+                // the name's size because it shares the name's baseline; this
+                // line has one of its own.
                 //
-                // Before that it matched Omarchy's launcher, back when
-                // SUPER+SPACE opened it: walked from title through bodySmall
-                // (Menu.qml:1299's detail line) to body, one step above it,
-                // under a heading name.
-                font.pixelSize: Style.font.title
+                // It was title, the name's own size, set apart only by the
+                // 0.52 opacity (2026-10-11). Before that it matched Omarchy's
+                // launcher, back when SUPER+SPACE opened it: walked from title
+                // through bodySmall to body, under a heading name.
+                font.pixelSize: Style.font.body
                 color: Color.menu.text
                 opacity: 0.52
               }

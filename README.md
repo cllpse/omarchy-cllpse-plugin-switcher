@@ -21,6 +21,11 @@ focus it, or drag one onto another workspace to move it there.
   any workspace and without switching to it. Drop in the tile's top third and
   the window goes above it, in the bottom third below it, in the middle third
   beside it, on the side the pointer is on.
+- **Drag a workspace's handle to re-arrange the workspaces.** Point at a
+  workspace and a handle fades in under the card beneath it; carry it to another
+  place in the row and the workspace moves there, with the ones in between
+  shifting along. Its windows, its layout and its split sizes come with it
+  untouched.
 - **While you drag over a workspace, a blue dot on each of its tiles shows
   where that window sits**: top-left, top, bottom-right and so on. A window
   alone on its workspace has none.
@@ -85,8 +90,11 @@ Then delete the blocks you appended from `~/.config/hypr/bindings.lua` and
 `~/.config/hypr/looknfeel.lua` and run `hyprctl reload`. Removing the bindings
 block restores Omarchy's own `SUPER+TAB` and `SUPER + mouse:272` behaviour,
 since this plugin only ever *rebinds* them at the end of your config. The plugin
-writes nothing else: no state files, no edits to `shell.json` beyond the entry
-`omarchy plugin add --enable` makes for you.
+writes nothing else of its own: no state files, no edits to `shell.json` beyond
+the entry `omarchy plugin add --enable` makes for you. The one file it touches
+is Omarchy's: re-arranging workspaces moves Omarchy's per-workspace layout files
+along with the workspaces (see *Re-arranging workspaces*), and those stay
+Omarchy's after removal.
 
 ## Using it
 
@@ -102,6 +110,7 @@ writes nothing else: no state files, no edits to `shell.json` beyond the entry
 | `SUPER` + click beside the card | dismiss without switching |
 | `SUPER` + drag a tile | move that window to the workspace you drop on |
 | `SUPER` + drag a tile onto another window's tile | split that window: above, beside or below it, by the third of the tile you drop in |
+| `SUPER` + drag a handle under the card | move that workspace to the place you drop it; the ones in between shift along. Releasing `SUPER` afterwards switches nothing |
 
 Opened from a corner there is no key to release, so nothing is
 pre-selected: the strip opens on the window you are already in, and a click is
@@ -208,6 +217,66 @@ against the area the workspace's tiled windows cover between them, so gaps and
 the bar drop out. A window whose dot would fall in the centre of the tile gets
 none — one alone on its workspace, or in the middle of both axes — and nor does
 a floating or fullscreen one. The colour is the theme's accent.
+
+### Re-arranging workspaces
+
+The workspace under the pointer shows a handle: a small blue pill floating under
+the card, centred on that workspace's tiles. It fades in as the pointer reaches
+a workspace and out as it leaves, as quickly as the strip's own fades but on
+Omarchy's gentler OutCubic curve so that it reads as a fade (58ms), and
+pointing below
+the card counts, so the pointer can travel down from the tiles to it. Carry it
+along the row and let go between two other groups, and that workspace moves
+there; the ones in between shift one place along to make room.
+The rule between the groups where it would land lights up in the accent, or a
+mark at the card's edge before the first group or after the last. The places
+either side of the group you are carrying would put it back where it is, so
+they show nothing. While it is carried, the group's tiles fade the way a
+dragged tile does. An empty workspace is a place like any other: drag one to
+the front and every workspace before it moves up a number.
+
+**Using a handle never switches.** From the moment one is pressed, releasing
+`SUPER` closes the strip without focusing anything, so you stay on the window
+and the workspace you were on. A strip opened with `SUPER+TAB` starts on the
+window you came from, and without this the release would go there. The
+highlight moves to where you are and hover leaves it alone, so the strip shows
+what the release will do. A `TAB`, a click on a tile, or picking up a tile
+makes it a choice again. The workspace on screen stays on screen through a
+re-arrange; only its number changes if it moved.
+
+**The places keep their numbers, and the workspaces move between them.**
+Whatever lands in the third place becomes workspace 3, so `SUPER+3` and the
+bar's third pip go to it. On a strip of 1 to 5 plus an 8, the last place is 8,
+so dragging 8 to the front makes the old 5 the new 8.
+
+**Nothing about a workspace changes but its number**: not its windows, not its
+layout or its split sizes, not whether it is the one on screen. No window moves.
+Hyprland 0.56 can renumber a workspace in place (`hl.dsp.workspace.change_id`),
+and the plugin renumbers every workspace that changes place in one
+`hyprctl eval` chunk. Each goes to a temporary number first, since Hyprland
+refuses a number another workspace holds and in a re-arrange every target is
+held by a workspace that is itself moving. Everything is checked before
+anything changes, and if any step is refused the chunk puts every number back.
+
+Two things have to be carried along by hand:
+
+- **The layout.** Omarchy's layout toggle (`omarchy-hyprland-workspace-layout-toggle`,
+  `SUPER+L` by default) keeps dwindle or scrolling per workspace *number*, as a
+  Hyprland rule and as a file in `~/.local/state/omarchy/workspace-layouts/`.
+  A renumbered workspace would take its new number's layout, and a layout
+  change rebuilds a workspace's tiling from scratch. So the plugin sets each
+  workspace's layout on its new number where that differs, and moves the files
+  to match, written in the toggle's own format, so a config reload keeps the
+  layout too. This is the only file the plugin writes, and only when one of
+  those files is involved or a layout differs from `general:layout`.
+- **Omarchy's bar.** Quickshell 0.3.1 ignores Hyprland's `changeworkspaceid`
+  event, so on its own the bar would go on showing the old numbers occupied and
+  the wrong one lit. After each renumbering the plugin refreshes Quickshell's
+  windows, workspaces and monitors, which is what the bar reads. What it cannot
+  do is remove a workspace that stopped existing — Quickshell only does that on
+  a destroy event or a config reload — so a pip above 5 for a workspace the
+  re-arrange emptied stays in the bar, dimmed, until the next reload or the next
+  visit to it. Pips 1 to 5 are drawn regardless, so nothing shows there.
 
 ## Terminal icons
 
@@ -389,8 +458,8 @@ highlights.
 ## Notes
 
 - The plugin runs inside the existing Omarchy shell process and starts no
-  Quickshell of its own. It shells out to `hyprctl` to focus and move windows,
-  once at startup to index your icon themes, once on first sight of a browser
+  Quickshell of its own. It shells out to `hyprctl` to focus and move windows
+  and to renumber workspaces, once at startup to index your icon themes, once on first sight of a browser
   window to find profiles, and to `favicons.py` when a browser page title it has
   no answer for appears. **Opening the strip spawns nothing** — a lookup is
   triggered by a page title changing, not by activation, and is skipped when

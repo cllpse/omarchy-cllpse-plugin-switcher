@@ -160,6 +160,80 @@ Item {
   property int dropPlaceLastAt: -1
   property int dropPlaceSteps: 0
 
+  // ── Drag a workspace to another place in the order ──────────────────────────
+  //
+  // Each group carries a handle under the card, centred on its run of tiles.
+  // Carry one along the row and let go between two other groups, and that
+  // workspace moves there: it takes the number of the place it lands in, and
+  // every workspace in between shifts one along to make room, the way any list
+  // reorders. The windows do not move at all -- the workspaces are renumbered,
+  // see _wsOrderChunk -- so each keeps its tiling exactly as it was.
+  //
+  // A gesture of its own rather than a mode of the tile drag above. The handles
+  // sit outside the ListView, so a press on one never reaches `tiles`, and only
+  // one of the two can be in the hand at a time.
+  //
+  // The workspace in the hand, by id, or -1.
+  property int wsDragId: -1
+  property bool wsDragging: false
+  // Pointer position in CARD coordinates, as dragX/dragY are.
+  property real wsDragX: 0
+  property real wsDragY: 0
+  // Which boundary between groups the pointer is offering: 0 in front of the
+  // first group, groups.length after the last, -1 off target. Counted the way
+  // dropSlot is, as the group centres the pointer has passed.
+  property int wsDropSlot: -1
+
+  // The strip's workspace groups in order, as { wsId, first, last } tile
+  // ranges. The list is sorted by workspace, so a group is one contiguous run
+  // and ascending ids are the order on screen.
+  readonly property var groups: root._groupsOf(root.wins)
+
+  // Where the group in the hand sits in `groups`, or -1.
+  readonly property int wsDragGroup: {
+    if (!root.wsDragging) return -1
+    for (var i = 0; i < root.groups.length; i++)
+      if (root.groups[i].wsId === root.wsDragId) return i
+    return -1
+  }
+
+  // A handle has been touched since the strip opened, so releasing SUPER
+  // closes it without switching. Nothing a handle does may move focus or
+  // change the workspace on screen (2026-10-23, the user's call): re-arranging
+  // is organising, not navigating. Before this, a SUPER+TAB strip opened on the
+  // window you came from, and releasing SUPER after a re-arrange went there.
+  //
+  // So the highlight moves to where you are on the press and stays there --
+  // hover no longer moves it -- and the strip shows what the release will do,
+  // which is nothing. A TAB or a click on a tile is a choice again and clears
+  // this, and so does picking up a tile, whose drop the release follows.
+  property bool stayPut: false
+
+  // Where the pointer was last seen on the panel, in panel coordinates, once
+  // it has been seen at all this open.
+  property bool pointerSeen: false
+  property real pointerX: 0
+  property real pointerY: 0
+
+  // The one workspace whose handle shows (2026-10-23, the user's call): the
+  // group under the pointer while it is over the switcher -- see _wsUnder --
+  // or the one in the hand while it is carried. None while a tile is carried,
+  // since a handle cannot be used mid-drag, and the group highlight already
+  // marks the workspace under it.
+  //
+  // A binding off the pointer's position rather than a value set on hover, so
+  // it follows the strip moving under a still pointer -- a scroll, or the
+  // re-sort after a drop -- with nothing else to notify.
+  readonly property int handleWsId: root.wsDragging ? root.wsDragId
+    : (root.dragging || !root.pointerSeen) ? -1
+    : root._wsUnder(root.pointerX, root.pointerY)
+
+  // Whether letting go would change the order. The boundaries either side of
+  // the group in the hand put it back where it is, so they offer nothing, draw
+  // no caret, and drop nothing.
+  readonly property bool wsDropReady: root.wsDragGroup >= 0 && root.wsDropSlot >= 0
+    && root.wsDropSlot !== root.wsDragGroup && root.wsDropSlot !== root.wsDragGroup + 1
+
   // ── Most-recently-used, for back-and-forth ──────────────────────────────────
   //
   // A single tap must return to the window you came from, and a second tap must
@@ -207,7 +281,8 @@ Item {
 
   // Every timed animation the strip runs itself -- the scrim's fade-in and the
   // selection's fade -- shares this duration and curve, so they cannot drift
-  // apart.
+  // apart. The workspace handles take this duration on a curve of their own --
+  // see their opacity.
   //
   // The curve is Hyprland's `default` bezier, cubic-bezier(0, 0.75, 0.15, 1),
   // the root of the compositor's animation tree (`hyprctl animations` lists
@@ -400,12 +475,16 @@ Item {
     var n = root.wins.length
     if (n === 0) { root.dismiss(); return }
     root.index = ((root.index + step) % n + n) % n
+    // A TAB after a handle was used is choosing a window again.
+    root.stayPut = false
     idleTimer.restart()
   }
 
   // Called by omarchy-shell when it hides the panel.
   function close() {
     root.opened = false
+    root.stayPut = false
+    root.pointerSeen = false
     root._dragCancel()
     idleTimer.stop()
     root._rebuild() // unfreeze: catch anything that changed while it was up
@@ -413,6 +492,8 @@ Item {
 
   function dismiss() {
     root.opened = false
+    root.stayPut = false
+    root.pointerSeen = false
     root._dragCancel()
     root.pendingSteps = 0
     root.pendingCommit = false
@@ -428,6 +509,11 @@ Item {
     // and if the focus won that race Hyprland would send you to the workspace
     // the window is about to LEAVE. A drag is not a selection anyway.
     if (root.dragging) { root._dragDrop(); root.dismiss(); return }
+    // Same for a workspace in the hand: the renumbering and a focus by number
+    // would race just the same.
+    if (root.wsDragging) { root._wsDragDrop(); root.dismiss(); return }
+    // A handle was used: close, and switch nothing. See stayPut.
+    if (root.stayPut) { root.dismiss(); return }
     idleTimer.stop()
     if (root.opened && root.index >= 0 && root.index < root.wins.length) {
       var sel = root.wins[root.index]
@@ -1581,6 +1667,7 @@ Item {
   Process { id: moveProc }
   Process { id: placeProc }
   Process { id: splitProc }
+  Process { id: wsOrderProc }
 
 
   // ── Window list ─────────────────────────────────────────────────────────────
@@ -1632,7 +1719,7 @@ Item {
   readonly property var refreshEvents: ({
     openwindow: 1, closewindow: 1, movewindow: 1, movewindowv2: 1,
     windowtitle: 1, windowtitlev2: 1, changefloatingmode: 1, fullscreen: 1,
-    monitoradded: 1, monitorremoved: 1
+    monitoradded: 1, monitorremoved: 1, changeworkspaceid: 1
   })
 
   Connections {
@@ -1640,8 +1727,40 @@ Item {
     function onRawEvent(event) {
       if (event.name === "custom") { root._overlayEvent(String(event.data)); return }
       if (root.refreshEvents[event.name] !== 1) return
+      if (event.name === "changeworkspaceid") workspaceResync.restart()
       refreshDebounce.restart()
     }
+  }
+
+  // Quickshell's own copy of the workspaces, brought back in line after a
+  // workspace changes number.
+  //
+  // Hyprland reports a renumbering as `changeworkspaceid>>OLD,NEW`, and
+  // Quickshell 0.3.1 has no handler for it (connection.cpp handles neither the
+  // name nor the change), so on its own it goes on holding each workspace
+  // object under its OLD id. Omarchy's bar reads exactly that state: its pips
+  // are occupied by a workspace's `toplevels` and lit by `focusedWorkspace`, so
+  // after a reorder it showed the old numbers occupied and the wrong one lit.
+  //
+  // Nothing here can rename an object -- a workspace's id is fixed once it is
+  // created -- but the three refreshes together re-link everything to the
+  // object for the right id. refreshToplevels() (refreshDebounce, 24ms after
+  // the event) moves every window onto the object for its workspace's NAME,
+  // creating any that are missing with no id yet; refreshWorkspaces() then
+  // fills those ids in, and refreshMonitors() moves the monitor's active
+  // workspace, which is what focusedWorkspace follows. Hence the order, and
+  // this running well after the toplevel refresh has landed.
+  //
+  // What it cannot do is drop an object whose id stopped existing: both refresh
+  // calls QML can reach run with canCreate false, which neither creates nor
+  // removes, and only a destroy event or a config reload does. That costs a
+  // dim bar pip for a workspace above 5 that a reorder emptied, until the next
+  // reload or the next visit to it. Up to 5 the bar draws a pip regardless.
+  Timer {
+    id: workspaceResync
+    interval: 120
+    repeat: false
+    onTriggered: { Hyprland.refreshWorkspaces(); Hyprland.refreshMonitors() }
   }
 
   // ── One overlay at a time ───────────────────────────────────────────────────
@@ -2030,6 +2149,9 @@ Item {
       if (a[i].title !== b[i].title) return false
       if (a[i].cls !== b[i].cls) return false
       if (a[i].ws !== b[i].ws) return false
+      // A renamed workspace keeps its name when it changes number, so a
+      // reorder can move a window to another id with `ws` unchanged.
+      if (a[i].wsId !== b[i].wsId) return false
       // A float toggle moves nothing in the strip, so without this the model
       // would keep the old flag and offer (or withhold) a split it should not.
       if (a[i].floating !== b[i].floating) return false
@@ -2084,6 +2206,7 @@ Item {
     // hanging, but a stale dragIndex would dim a tile of the NEW list and let a
     // stray release drop a window somewhere nobody asked for.
     root._dragCancel()
+    root.stayPut = false
     var n = root.wins.length
     if (n < 2) return
     var cur = root._activeIndex()
@@ -2331,6 +2454,8 @@ Item {
   function _dragStart(i) {
     root.dragIndex = i
     root.dragging = true
+    // A tile's drop is followed by the release, handle or no handle before it.
+    root.stayPut = false
     // The dragged tile is what the highlight means for the rest of the gesture:
     // it is the thing in the hand, and releasing SUPER has to focus it rather
     // than whatever the pointer happened to pass over on the way.
@@ -2370,12 +2495,14 @@ Item {
     idleTimer.restart()
   }
 
+  // Nothing in the hand, a window or a workspace.
   function _dragCancel() {
     root.dragIndex = -1
     root.dragging = false
     root.dropWsId = -1
     root.dropTile = -1
     root.dropSplit = ""
+    root._wsDragCancel()
   }
 
   function _dragDrop() {
@@ -2643,6 +2770,262 @@ Item {
     refreshDebounce.restart()
   }
 
+  // --- Workspace order --------------------------------------------------------
+
+  // The groups of `arr`, in order. See root.groups.
+  function _groupsOf(arr) {
+    var out = []
+    for (var i = 0; i < arr.length; i++) {
+      if (i > 0 && arr[i].wsId === arr[i - 1].wsId) { out[out.length - 1].last = i; continue }
+      out.push({ wsId: arr[i].wsId, first: i, last: i })
+    }
+    return out
+  }
+
+  // The middle of a group's run of tiles, in ListView content coordinates:
+  // where its handle is centred, and the line a carried handle crosses to pass
+  // that group.
+  function _groupMid(g) {
+    return (root._cellX(g.first) + root._cellX(g.last) + card.cellW) / 2
+  }
+
+  // Whether panel point (x, y) is over the switcher: the card, and the band
+  // under it down to the bottom of the handle row. The gap between the two
+  // counts, or a pointer on its way from the tiles to a handle would hide the
+  // handle it is reaching for.
+  function _overSwitcher(x, y) {
+    return x >= card.x && x <= card.x + card.width
+      && y >= card.y && y <= handles.y + handles.height
+  }
+
+  // The workspace under panel point (x, y), or -1 off the switcher. By x
+  // alone, on _wsAt's nearest-tile rule, so the card, the gap and the handle
+  // row all agree on it, and a gap between two groups belongs to the nearer.
+  function _wsUnder(x, y) {
+    if (!root._overSwitcher(x, y)) return -1
+    return root._wsAt(x - card.x - list.x + list.contentX - list.originX)
+  }
+
+  // Every MouseArea the pointer can be over reports here, in panel
+  // coordinates: the click-away, the tiles and the handles.
+  function _notePointer(x, y) {
+    root.pointerX = x
+    root.pointerY = y
+    root.pointerSeen = true
+  }
+
+  // A handle was pressed: from here the release switches nothing, and the
+  // highlight shows that by sitting on where you are. See stayPut.
+  function _stayPut() {
+    root.stayPut = true
+    var i = root._hereIndex()
+    if (i >= 0) root.index = i
+  }
+
+  // The tile for where you are: the empty workspace on screen if you are on
+  // one, else the focused window. -1 when neither is on the strip.
+  function _hereIndex() {
+    var want = []
+    var ws = Hyprland.focusedWorkspace
+    if (ws) want.push("ws:" + ws.id)
+    var t = Hyprland.activeToplevel
+    if (t) want.push(root._addr(t.address))
+    for (var k = 0; k < want.length; k++)
+      for (var i = 0; i < root.wins.length; i++)
+        if (root._addr(root.wins[i].address) === want[k]) return i
+    return -1
+  }
+
+  function _wsDragStart(wsId) {
+    root._dragCancel()
+    root.wsDragId = wsId
+    root.wsDragging = true
+  }
+
+  // cx/cy in card coordinates.
+  function _wsDragTo(cx, cy) {
+    root.wsDragX = cx
+    root.wsDragY = cy
+    // On target across the card's width, from its top edge down to a handle's
+    // height past the handle row, its reach included. The row is where a
+    // handle is carried, and a pointer drifting a little below it should not
+    // lose the drop.
+    var bottom = handles.y + handles.height - card.y + card.handleH
+    if (cx < 0 || cx > card.width || cy < 0 || cy > bottom) {
+      root.wsDropSlot = -1
+    } else {
+      var lx = cx - list.x + list.contentX - list.originX
+      var j = 0
+      for (var k = 0; k < root.groups.length; k++)
+        if (lx >= root._groupMid(root.groups[k])) j++
+      root.wsDropSlot = j
+    }
+    idleTimer.restart()
+  }
+
+  function _wsDragCancel() {
+    root.wsDragId = -1
+    root.wsDragging = false
+    root.wsDropSlot = -1
+  }
+
+  // Move the group in the hand to the boundary it was dropped on.
+  //
+  // The groups' ids, ascending, are the places; what moves between them is
+  // the workspaces. Taking one out and putting it back at the boundary gives
+  // the new order, and the workspace that ends up in place p takes the id
+  // place p had. So the set of ids on the strip never changes, only which
+  // workspace holds each -- which is also what makes an empty workspace one
+  // more place like any other: drag one to the front and everything before it
+  // shifts up a number.
+  function _wsDragDrop() {
+    var ready = root.wsDropReady
+    var from = root.wsDragGroup
+    var slot = root.wsDropSlot
+    var g = root.groups
+    root._wsDragCancel()
+    if (!ready) return
+
+    var ids = []
+    for (var k = 0; k < g.length; k++) ids.push(g[k].wsId)
+    var order = ids.slice()
+    var held = order.splice(from, 1)[0]
+    order.splice(slot > from ? slot - 1 : slot, 0, held)
+    var moves = []
+    var newId = ({})
+    for (var p = 0; p < ids.length; p++) {
+      newId[order[p]] = ids[p]
+      if (order[p] !== ids[p]) moves.push([order[p], ids[p]])
+    }
+    if (moves.length === 0) return
+
+    // Keep the highlight on what it was on. A window keeps its address; an
+    // empty workspace's tile is addressed by its id, which is what changed.
+    var sel = (root.index >= 0 && root.index < root.wins.length) ? root.wins[root.index] : null
+    root.dropPlacePending = false
+    root.dropFollowAddr = !sel ? ""
+      : sel.kind === "workspace" ? "ws:" + newId[sel.wsId]
+      : root._addr(sel.address)
+    dropUnfreeze.restart()
+
+    wsOrderProc.command = ["hyprctl", "eval", root._wsOrderChunk(moves)]
+    wsOrderProc.running = true
+    refreshDebounce.restart()
+  }
+
+  // The reorder, as one Lua chunk: `moves` is a list of [old id, new id].
+  //
+  // hl.dsp.workspace.change_id renumbers a workspace in place. It is the same
+  // object afterwards -- its windows, its layout tree and its split ratios,
+  // whether it is the one on screen -- under another id, with its name
+  // following unless it was renamed (CWorkspace::changeID, 0.56.2). So the
+  // workspace on screen stays on screen and only its number in the bar
+  // changes, and none of the tiling has to be rebuilt the way moving every
+  // window would have done.
+  //
+  // It refuses an id another workspace holds ("ID is taken"), and in a reorder
+  // every target is taken by a workspace that is itself about to move. So every
+  // workspace that moves goes to a free id far above any real one first, and
+  // from there to its new one.
+  //
+  // Everything is checked before anything changes, and a refusal part way
+  // undoes what was done, in reverse: the places already taken go back to
+  // their temporary ids, then every one back to where it began. A workspace
+  // left on 2000000003 would be a bar pip and a keybind target nobody can
+  // reach. A place in `moves` with no workspace on it -- an empty one on the
+  // strip, which Hyprland only has while it is on screen -- needs no
+  // renumbering at all: nothing is there to move, and its id is simply free
+  // once the others have moved.
+  //
+  // A workspace's LAYOUT then has to follow it, which the renumbering alone
+  // does not do. Omarchy's layout toggle (omarchy-hyprland-workspace-layout-
+  // toggle) keeps dwindle or scrolling per workspace NUMBER, as a workspace
+  // rule and as a state file per id that is loaded on every config load. The
+  // renumbering re-applies rules by the new id (workspaceChangeIDUpdatesRules,
+  // hyprtester), and a workspace whose layout changes is rebuilt from scratch
+  // (CWorkspaceAlgoMatcher::updateWorkspaceLayouts skips one only when the
+  // layout is the same), so a scrolling workspace moved onto a dwindle number
+  // would lose its arrangement. So each workspace's layout is set as a rule on
+  // its new id where that differs from what the id already has, and the state
+  // files are moved to match, rewritten in the toggle's own format, so a reload
+  // keeps it. Rules and renumbering land in the same pass: Hyprland only
+  // schedules the refresh that applies them. All files are read before any is
+  // written, because the places are swapped among themselves.
+  function _wsOrderChunk(moves) {
+    var pairs = []
+    for (var i = 0; i < moves.length; i++)
+      pairs.push("{ " + (moves[i][0] | 0) + ", " + (moves[i][1] | 0) + " }")
+    return [
+      'local moves = { ' + pairs.join(", ") + ' }',
+      'local base = 2000000000',
+      'local function ws(id)',
+      '  local w = hl.get_workspace(tostring(id))',
+      '  if w and w.id == id then return w end',
+      'end',
+      'local function change(from, to)',
+      '  local r = hl.dispatch(hl.dsp.workspace.change_id({ workspace = tostring(from), id = to }))',
+      '  return r and r.ok',
+      'end',
+      'local olds, live = {}, {}',
+      'for _, m in ipairs(moves) do olds[m[1]] = true end',
+      'for _, m in ipairs(moves) do',
+      '  if ws(base + m[1]) or (ws(m[2]) and not olds[m[2]]) then return end',
+      '  local w = ws(m[1])',
+      '  if w then',
+      '    if w.special then return end',
+      '    live[#live + 1] = { m[1], m[2], w.tiled_layout }',
+      '  end',
+      'end',
+      'local dir = os.getenv("XDG_STATE_HOME")',
+      'if dir == nil or dir == "" then dir = os.getenv("HOME") .. "/.local/state" end',
+      'dir = dir .. "/omarchy/workspace-layouts/"',
+      'local default = hl.get_config("general.layout")',
+      'local saved, layout = {}, {}',
+      'for _, m in ipairs(moves) do',
+      '  local f = io.open(dir .. m[1] .. ".lua", "r")',
+      '  if f then',
+      '    local s = f:read("a") or ""',
+      '    f:close()',
+      '    saved[m[1]] = s:match(\'layout%s*=%s*"([^"]+)"\') or default',
+      '  end',
+      'end',
+      'for _, m in ipairs(live) do layout[m[1]] = m[3] end',
+      'local parked, placed = {}, {}',
+      'local ok = true',
+      'for _, m in ipairs(live) do',
+      '  if not change(m[1], base + m[1]) then ok = false break end',
+      '  parked[#parked + 1] = m',
+      'end',
+      'if ok then',
+      '  for _, m in ipairs(live) do',
+      '    if not change(base + m[1], m[2]) then ok = false break end',
+      '    placed[#placed + 1] = m',
+      '  end',
+      'end',
+      'if not ok then',
+      '  for i = #placed, 1, -1 do change(placed[i][2], base + placed[i][1]) end',
+      '  for i = #parked, 1, -1 do change(base + parked[i][1], parked[i][1]) end',
+      '  return',
+      'end',
+      'for _, m in ipairs(moves) do',
+      '  local l = layout[m[1]] or saved[m[1]] or default',
+      '  if l ~= (saved[m[2]] or default) then',
+      '    pcall(hl.workspace_rule, { workspace = tostring(m[2]), layout = l })',
+      '  end',
+      '  local path = dir .. m[2] .. ".lua"',
+      '  if saved[m[1]] or l ~= default then',
+      '    local f = io.open(path, "w")',
+      '    if f then',
+      '      f:write(string.format(\'hl.workspace_rule({ workspace = "%d", layout = "%s" })\\n\', m[2], l))',
+      '      f:close()',
+      '    end',
+      '  elseif saved[m[2]] then',
+      '    os.remove(path)',
+      '  end',
+      'end'
+    ].join("\n")
+  }
+
   // Auto-scroll while dragging against an edge.
   //
   // The strip is wider than the card as soon as there are more windows than
@@ -2651,15 +3034,18 @@ Item {
   // on the busy desktop it is most useful on. The ListView is
   // `interactive: false`, so contentX is ours to move; speed ramps with how far
   // into the edge zone the pointer is, the way a drag-scroll normally does.
+  // A workspace carried by its handle scrolls the strip the same way.
   Timer {
     id: dragScroll
     interval: 16
     repeat: true
-    running: root.dragging
+    running: root.dragging || root.wsDragging
     onTriggered: {
-      if (root.dropWsId < 0) return          // pointer is off the card entirely
+      var carryingWs = root.wsDragging
+      // Pointer off the card entirely, or off the workspace drop's target.
+      if ((carryingWs ? root.wsDropSlot : root.dropWsId) < 0) return
       if (list.contentWidth <= list.width) return
-      var lx = root.dragX - list.x           // pointer, in VIEWPORT coordinates
+      var lx = (carryingWs ? root.wsDragX : root.dragX) - list.x  // VIEWPORT coordinates
       var edge = card.cellW / 2
       var step = 0
       if (lx < edge) step = -Math.round((edge - lx) / 4)
@@ -2672,7 +3058,8 @@ Item {
       // The strip moved under a pointer that did not, so the offer changed --
       // the slot and the tile as well as the workspace, which is why this is
       // the whole hit-test again rather than _wsAt alone.
-      root._dragTo(lx + list.contentX - list.originX, root.dragX, root.dragY)
+      if (carryingWs) root._wsDragTo(root.wsDragX, root.wsDragY)
+      else root._dragTo(lx + list.contentX - list.originX, root.dragX, root.dragY)
     }
   }
 
@@ -2800,6 +3187,13 @@ Item {
       id: clickAway
       anchors.fill: parent
       acceptedButtons: Qt.LeftButton
+      // For the hovered workspace's handle -- see root.handleWsId. This is the
+      // surface the pointer is over everywhere the tiles and a shown handle
+      // are not: the card's padding, the gap under it, the rest of the screen.
+      // Over those two, their own MouseAreas take the hover and report the
+      // position instead. Its coordinates are the panel's, since it fills it.
+      hoverEnabled: true
+      onPositionChanged: function (mouse) { root._notePointer(mouse.x, mouse.y) }
 
       function inCard(x, y) {
         var p = mapToItem(card, x, y)
@@ -3034,6 +3428,34 @@ Item {
       // parallel. The overflow scrims below do the same against their edge.
       readonly property int innerRadius: Math.max(0, card.radius - card.contentTopInset)
 
+      // The workspace handles under the card -- see `handles`. A handle is
+      // measured in one unit, the card's bottom inset (border plus padding,
+      // the distance from the tiles down to the card's lower edge): a pill
+      // handleUnits tall and twice that wide, a 12 unit and 42 x 21 at
+      // base-size 18. It follows the text size and switcher-card-padding with
+      // the card. handleUnits is the size to step, a quarter at a time.
+      //
+      // Found on request (2026-10-23): it was 44 x 22 through Style.space(),
+      // 66 x 33 here and still too big, and before that 48 x 24 the same way,
+      // 72 x 36 here. Then two units, 48 x 24; 1.5, 36 x 18; and back up a
+      // step to 1.75.
+      readonly property real handleUnit: card.contentBottomInset
+      readonly property real handleUnits: 1.75
+      readonly property int handleH: Math.round(card.handleUnit * card.handleUnits)
+      readonly property int handleW: card.handleH * 2
+      // How far below the card the handle floats: twice the card's padding,
+      // the space the tiles keep from its edge, taken as the theme step
+      // nearest that (2026-10-23, the user's call). That is xxl, and exactly:
+      // 2 x 6 = 12 at scale 1, 2 x 9 = 18 at base-size 18. A theme that moves
+      // switcher-card-padding off 6 moves this off twice it. It was one unit,
+      // 12 here.
+      readonly property int handleGap: Style.spacing.xxl
+      // How far below the pill a handle still takes a press: the same unit
+      // as the gap above it (2026-10-23, the user's call). The pill is a thin
+      // target on its own, and the space under it is the side nothing else
+      // wants -- above it is the gap to the tiles.
+      readonly property int handleReach: card.handleGap
+
       color: Color.menu.background
       radius: Style.cornerRadius
       borderSpec: Border.surfaceSpec("menu", "border", Color.menu.border, Math.max(1, Style.space(2)))
@@ -3173,8 +3595,10 @@ Item {
             // Lifted. The tile being dragged fades back to a hole in the strip
             // while the ghost under the cursor carries it, which is how a
             // dragged item normally reads -- and it keeps the two from looking
-            // like two copies of the same window.
-            opacity: (root.dragging && index === root.dragIndex) ? 0.3 : 1
+            // like two copies of the same window. A workspace carried by its
+            // handle fades the same way, every tile of it.
+            opacity: (root.dragging && index === root.dragIndex)
+              || (root.wsDragging && modelData.wsId === root.wsDragId) ? 0.3 : 1
 
             // The selection: the menu's selected fill and selected-border,
             // faded rather than switched. The tile losing the selection fades
@@ -3734,6 +4158,48 @@ Item {
         }
       }
 
+      // Where a carried workspace would land: the boundary between two groups,
+      // or before the first or after the last.
+      //
+      // A group rule, lit. The tile caret above is sized to the row because it
+      // marks a place among tiles; this marks a place among workspaces, which
+      // the strip already draws as rules running the card's full height, so it
+      // takes their box -- inside the card's border, as groupRules sits -- and
+      // their stroke, and lies exactly over the rule at an interior boundary.
+      // At either end there is no rule, and it is centred in the card's padding
+      // instead.
+      //
+      // Wider than groupRules, which only spans the list: the two ends are in
+      // the padding, outside it. Clamped into view like the tile caret, for a
+      // boundary scrolled out of the viewport.
+      Item {
+        id: wsCaret
+        x: groupRules.edgeLeft
+        y: groupRules.y
+        width: card.width - groupRules.edgeLeft - groupRules.edgeRight
+        height: groupRules.height
+        clip: true
+        visible: root.wsDropReady
+
+        Rectangle {
+          width: root._snapPx(card.ruleStroke)
+          height: parent.height
+          radius: width / 2
+          x: {
+            var g = root.groups
+            var j = root.wsDropSlot
+            if (!root.wsDropReady || j < 0 || j > g.length) return -width
+            var edge = j === 0 ? root._cellX(g[0].first) - card.leftPadding / 2
+              : j === g.length ? root._cellX(g[j - 1].last) + card.cellW + card.rightPadding / 2
+              : root._cellX(g[j].first) - (card.gap + card.groupGap) / 2
+            var vx = list.x - wsCaret.x + edge - (list.contentX - list.originX) - width / 2
+            return root._snapPx(Math.max(0, Math.min(wsCaret.width - width, vx)))
+          }
+          // The tile caret's colour: an active target, not a division.
+          color: Color.menu.selectedText
+        }
+      }
+
       // Click a tile to focus that window; drag one onto another workspace's
       // group to move it there. Placed after the ListView so it sits above it;
       // the list is `interactive: false`, so nothing below competes for the
@@ -3778,6 +4244,10 @@ Item {
         }
 
         onPositionChanged: function (mouse) {
+          // For the hovered workspace's handle. The panel's coordinates are
+          // the scene's: its content item sits at the origin.
+          var sp = tiles.mapToItem(null, mouse.x, mouse.y)
+          root._notePointer(sp.x, sp.y)
           if (!root.opened || root.wins.length < 2) return
 
           if (root.dragging) {
@@ -3799,8 +4269,9 @@ Item {
 
           // Plain hover. Deliberately after the drag branches: the highlight
           // belongs to the tile in the hand for the whole of a drag, and must
-          // not follow the pointer across the tiles it passes over.
-          if (root.splitSettling) return
+          // not follow the pointer across the tiles it passes over. Nor after a
+          // handle was used, where the highlight marks where you stay.
+          if (root.splitSettling || root.stayPut) return
           var p = tiles.mapToItem(null, mouse.x, mouse.y)
           if (!root._hoverAt(p.x, p.y)) return
           var idx = root._cellAt(tiles.lx(mouse.x))
@@ -3817,6 +4288,8 @@ Item {
           if (root.dragging) { root._dragDrop(); return }
           var idx = root._cellAt(tiles.lx(mouse.x))
           if (idx < 0) return
+          // A click is a choice, after a handle or not.
+          root.stayPut = false
           root.index = idx
           root.commit()
         }
@@ -3971,6 +4444,133 @@ Item {
           orientation: Gradient.Horizontal
           GradientStop { position: 0; color: Util.alpha(Color.menu.background, 0) }
           GradientStop { position: 1; color: Color.menu.background }
+        }
+      }
+    }
+
+    // Workspace handles: one per group, floating a little below the card and
+    // centred on the group's run of tiles. Press one and carry it along the row
+    // to move that workspace -- see _wsDragDrop.
+    //
+    // Outside the card, so a handle takes no room from the tiles and the card
+    // keeps its size and its place on screen. A plain pill of solid accent, no
+    // border and nothing in it (2026-10-23, the user's call), the same at
+    // rest, under the pointer and in the hand. The accent is macOS's blue in
+    // these themes (#007AFF). It was the card's own chrome first, the menu's
+    // background and border, with the selected fill while lit; then the accent
+    // with a 3 x 2 grip of white dots, which went too.
+    //
+    // Clipped to the card's width and scrolled with the list, as the group
+    // rules are: a handle belongs to its group, and goes past the card's edge
+    // with it. None with a single group, which has nowhere to go.
+    //
+    // Only the hovered workspace's handle shows (2026-10-23, the user's call):
+    // the group under the pointer while it is over the switcher -- the card,
+    // the gap and the handle row, see _wsUnder -- and the one in the hand
+    // while carried. See root.handleWsId. A SUPER+TAB is about windows, and a
+    // row of blue under every group was noise; it was briefly the whole row,
+    // shown while the pointer was over the switcher.
+    Item {
+      id: handles
+      x: card.x
+      y: card.y + card.height + card.handleGap
+      width: card.width
+      // Tall enough for each handle's reach under its pill. The clip takes
+      // input with it -- Qt delivers nothing to a child outside a clipping
+      // parent -- so a row only as tall as the pill would cut the reach off.
+      height: card.handleH + card.handleReach
+      clip: true
+      visible: root.groups.length >= 2
+
+      Repeater {
+        model: root.groups
+
+        delegate: BorderSurface {
+          id: handle
+          readonly property bool held: root.wsDragId === modelData.wsId
+          width: card.handleW
+          height: card.handleH
+          // Centred on its group, or under the pointer while carried -- along
+          // the row only, since the row is the order being changed.
+          x: root._snapPx(handle.held
+            ? Math.max(0, Math.min(handles.width - handle.width, root.wsDragX - handle.width / 2))
+            : list.x + root._groupMid(modelData) - (list.contentX - list.originX) - handle.width / 2)
+          radius: handle.height / 2
+          color: Color.accent
+          borderSpec: Border.none()
+
+          // Faded in and out on the selection's root.animDuration, so moving
+          // between groups crossfades their handles as moving between tiles
+          // crossfades the highlight. Instant while the strip is closed, as
+          // the selection is, so an open never starts with the last one's
+          // fade-out. Not shown at 0, so a hidden handle takes no press: the
+          // click-away under it does.
+          //
+          // On Easing.OutCubic -- Omarchy's own curve for a QML fade
+          // (PopupCard.qml) -- not root.animCurve (2026-10-23, the user's
+          // call). Hyprland's `default` puts the bulk of a change in the first
+          // frame: at 120Hz a handle reached 73% opacity in one frame and 87%
+          // in two, which read as no fade at all. The selection gets away with
+          // it because it only steps the card's colour by a shade; a saturated
+          // blue pill against the desktop does not. Doubling the duration was
+          // tried first and changed nothing on screen -- 60% and 73% at 116ms,
+          // and an offscreen qmltestrunner copy of this delegate jumped
+          // 0 -> 77% on its first 60Hz tick -- so it was the curve. OutCubic
+          // runs 37, 64, 82, 92, 98% by frame.
+          opacity: root.handleWsId === modelData.wsId ? 1 : 0
+          visible: handle.opacity > 0
+
+          Behavior on opacity {
+            enabled: root.opened
+            NumberAnimation {
+              duration: root.animDuration
+              easing.type: Easing.OutCubic
+            }
+          }
+
+          MouseArea {
+            id: grip
+            // The pill, and card.handleReach under it.
+            width: parent.width
+            height: parent.height + card.handleReach
+            acceptedButtons: Qt.LeftButton
+            hoverEnabled: true
+            cursorShape: root.wsDragging ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+
+            // In card coordinates, not the handle's own: the handle moves
+            // under the pointer once it is carried.
+            property real pressX: 0
+            property real pressY: 0
+
+            onPressed: function (mouse) {
+              list.cancelFlick()
+              // Touching a handle at all, drag or not, gives up switching.
+              root._stayPut()
+              var p = grip.mapToItem(card, mouse.x, mouse.y)
+              grip.pressX = p.x
+              grip.pressY = p.y
+            }
+
+            onPositionChanged: function (mouse) {
+              var sp = grip.mapToItem(null, mouse.x, mouse.y)
+              root._notePointer(sp.x, sp.y)
+              if (!root.opened || !(mouse.buttons & Qt.LeftButton)) return
+              var p = grip.mapToItem(card, mouse.x, mouse.y)
+              if (!root.wsDragging) {
+                // The tiles' threshold, Qt's own.
+                var dx = p.x - grip.pressX
+                var dy = p.y - grip.pressY
+                if (Math.sqrt(dx * dx + dy * dy) < Qt.styleHints.startDragDistance) return
+                root._wsDragStart(modelData.wsId)
+              }
+              root._wsDragTo(p.x, p.y)
+            }
+
+            // A press that never became a drag does nothing: a handle is not a
+            // button.
+            onReleased: if (root.wsDragging) root._wsDragDrop()
+            onCanceled: root._wsDragCancel()
+          }
         }
       }
     }

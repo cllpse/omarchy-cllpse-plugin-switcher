@@ -104,6 +104,14 @@ Item {
   // motion -- which, unheld, is hover, and would move the highlight off the
   // window that was just dropped. See _splitChunk.
   property bool splitSettling: false
+  // Whether hover may move the highlight. Off at every key press, back on once
+  // the pointer has travelled far enough, late enough. See _hoverAt.
+  property bool hoverArmed: false
+  // Where the pointer was last seen while hover was still off, in SCENE
+  // coordinates, so a tile row that moves under a still pointer is not motion.
+  property bool hoverAnchored: false
+  property real hoverAnchorX: 0
+  property real hoverAnchorY: 0
 
   // Whether letting go here would do anything at all: a live drag, over a
   // group. The workspace is deliberately NOT required to differ -- dropping a
@@ -338,6 +346,11 @@ Item {
     // is applied by _rebuild() exactly like a real step.
     if (action !== "next" && action !== "prev" && action !== "show") return
     var step = (action === "prev") ? -1 : (action === "show") ? 0 : 1
+
+    // The keyboard is choosing, so the pointer has to earn the highlight back.
+    // A corner summon IS the pointer, so it starts out with it.
+    if (action === "show") { hoverHold.stop(); root.hoverArmed = true }
+    else root._hoverHold()
 
     if (!root.opened) {
       // Warm path: the list is already in memory, so opening is synchronous --
@@ -2114,10 +2127,52 @@ Item {
   //
   // Masking the surface to the card (mask: Region { item: card }) gave it a
   // real input region, so hover now arrives for free and the poll is gone.
-  // onPositionChanged only fires when the pointer actually moves, which also
-  // replaces the old `hoverBase` distance threshold: that existed purely so a
-  // cursor resting on a tile at open time would not yank the selection off the
-  // keyboard's choice, and a movement-only signal gives that for nothing.
+  //
+  // This went on to say onPositionChanged only fires when the pointer actually
+  // moves, and dropped the old `hoverBase` distance threshold on the strength
+  // of it. On Qt 6.11 that is wrong: QQuickMouseArea::hoverEnterEvent emits
+  // positionChanged too, so the strip appearing under a pointer resting on the
+  // tile row reports a position at once. A quick SUPER+TAB then committed the
+  // tile under the cursor instead of the window you came from. _hoverAt puts
+  // the threshold back, with a hold after each key press.
+
+  // Whether a hover at scene point (sx, sy) may take the highlight. Two
+  // conditions, each from a shipped switcher or menu with this problem:
+  //  - Distance, as Qt's QMenu (QMenuPrivate::hasMouseMoved): the pointer has
+  //    to travel more than Qt.styleHints.startDragDistance (8px here),
+  //    manhattan, from where it was seen. That alone settles a resting pointer.
+  //  - Time, as GNOME Shell's switcher (_disableHover, DISABLE_HOVER_TIMEOUT):
+  //    nothing counts for 250ms after a key press, the opening one included --
+  //    half GNOME's 500, which is still longer than a quick tap. A hand on the
+  //    mouse can push it past 8px during one.
+  // Motion inside the hold moves the anchor instead of adding up, so the 8px
+  // have to be travelled after it -- a bump during the tap never arms hover
+  // later on its own. Once armed it stays armed until the next key press.
+  function _hoverAt(sx, sy) {
+    if (root.hoverArmed) return true
+    if (hoverHold.running || !root.hoverAnchored) {
+      root.hoverAnchorX = sx
+      root.hoverAnchorY = sy
+      root.hoverAnchored = true
+      return false
+    }
+    if (Math.abs(sx - root.hoverAnchorX) + Math.abs(sy - root.hoverAnchorY)
+        <= Qt.styleHints.startDragDistance) return false
+    root.hoverArmed = true
+    return true
+  }
+
+  function _hoverHold() {
+    root.hoverArmed = false
+    root.hoverAnchored = false
+    hoverHold.restart()
+  }
+
+  Timer {
+    id: hoverHold
+    interval: 250
+    repeat: false
+  }
 
   // Which tile is at `lx`, measured from the START of the ListView's content
   // (contentX - originX, not contentX alone -- cell 0 begins at originX, which
@@ -3695,8 +3750,9 @@ Item {
         // A hand over the tiles, closing on one while it is being carried --
         // the pair every other draggable thing on the desktop uses.
         cursorShape: root.dragging ? Qt.ClosedHandCursor : Qt.PointingHandCursor
-        // Moving the pointer over a cell makes it the highlight; releasing
-        // SUPER then focuses it, same as with the keyboard.
+        // Moving the pointer over a cell makes it the highlight -- once it has
+        // earned it, see _hoverAt; releasing SUPER then focuses it, same as
+        // with the keyboard.
         hoverEnabled: true
 
         // The tile under the press, if it is one that can be dragged at all --
@@ -3745,6 +3801,8 @@ Item {
           // belongs to the tile in the hand for the whole of a drag, and must
           // not follow the pointer across the tiles it passes over.
           if (root.splitSettling) return
+          var p = tiles.mapToItem(null, mouse.x, mouse.y)
+          if (!root._hoverAt(p.x, p.y)) return
           var idx = root._cellAt(tiles.lx(mouse.x))
           if (idx < 0) return
           root.index = idx

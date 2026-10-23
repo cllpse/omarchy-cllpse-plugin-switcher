@@ -96,7 +96,7 @@ writes nothing else: no state files, no edits to `shell.json` beyond the entry
 | `SUPER+SHIFT+TAB` | step back |
 | release `SUPER` | focus the highlighted window |
 | pointer into **any screen corner** | open the strip, no key held |
-| move the pointer | highlight the tile under it |
+| move the pointer | highlight the tile under it, once it has moved 8px and not within a quarter of a second of a key |
 | scroll wheel | scroll the strip sideways when it is wider than the card, gliding to a stop like an ordinary list |
 | `SUPER` + click a tile | focus that window |
 | `SUPER` + click beside the card | dismiss without switching |
@@ -107,6 +107,17 @@ Opened from a corner there is no key to release, so nothing is
 pre-selected: the strip opens on the window you are already in, and a click is
 what chooses. Click a tile to focus it, click beside the card to dismiss. The
 same drag works — hold the pointer down on a tile and drop it on a workspace.
+
+### A pointer resting on the strip
+
+A quick `SUPER+TAB` goes back to the window you came from, wherever the pointer
+happens to be. Hover only takes the highlight once the pointer has travelled
+more than Qt's drag distance (8px, the rule Qt's own menus use) and no sooner
+than 250ms after a key press (half what GNOME's switcher waits). Motion during
+those 250ms does not count toward the 8px, so a mouse knocked during the tap
+cannot take over later on its own. Each `TAB` hands the highlight back to the
+keyboard until the pointer moves again. A click is never held back, and a strip
+opened from a corner follows the pointer from the start.
 
 ### The screen corners
 

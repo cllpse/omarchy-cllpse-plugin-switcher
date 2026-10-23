@@ -17,6 +17,13 @@ focus it, or drag one onto another workspace to move it there.
 - **Drag a tile onto a workspace group** to move that window there, landing at
   whichever boundary you drop on — before its first window, after its last, or
   between any two. Dropping on a tile's own group re-arranges it in place.
+- **Drag a tile onto another window's tile** to split that window with it, on
+  any workspace and without switching to it. Drop in the tile's top third and
+  the window goes above it, in the bottom third below it, in the middle third
+  beside it, on the side the pointer is on.
+- **While you drag over a workspace, a blue dot on each of its tiles shows
+  where that window sits**: top-left, top, bottom-right and so on. A window
+  alone on its workspace has none.
 - **A terminal tile shows what is running in it** — a Claude session, a diff
   viewer, `btop` — as a small icon over the terminal's own.
 - **A browser tile shows the favicon of the site it is on**, in that same
@@ -94,6 +101,7 @@ writes nothing else: no state files, no edits to `shell.json` beyond the entry
 | `SUPER` + click a tile | focus that window |
 | `SUPER` + click beside the card | dismiss without switching |
 | `SUPER` + drag a tile | move that window to the workspace you drop on |
+| `SUPER` + drag a tile onto another window's tile | split that window: above, beside or below it, by the third of the tile you drop in |
 
 Opened from a corner there is no key to release, so nothing is
 pre-selected: the strip opens on the window you are already in, and a click is
@@ -143,7 +151,52 @@ either edge.
 Arranging works on a workspace laid out as one row or one column. A workspace
 mixing horizontal and vertical splits has no ordering a single strip of tiles
 could point at, and none is invented — the move simply stops when the layout
-declines it.
+declines it. Dropped onto a window instead, there is a second offer that needs
+no ordering, below.
+
+### Splitting a window
+
+Over another window's tile, a drop is aimed at that window rather than at a
+boundary. The tile is cut into thirds: the top one puts the dragged window above
+it, the bottom one below it, and the middle one beside it, on whichever half of
+the tile the pointer is over. A bar along the tile's top or bottom edge, at the
+weight of the rule between workspace groups, or the caret at its side, marks
+where the window will go. The dragged chip turns translucent so it does not hide
+that bar. The window takes half of the one it splits, which is how dwindle opens
+any window, and it can come from any workspace and go to any workspace.
+
+Hyprland has nothing that says "open this window against that one", so the
+plugin arranges for the path a window takes into the layout to pick the target
+and the side, then floats the dragged window and tiles it again to send it
+through. That path works differently on the workspace you are looking at and on
+the others, so there are two ways in, both one `hyprctl eval` chunk:
+
+- **On screen**, a new window splits the focused one, on the side `preselect`
+  names. So the target is focused for the moment, the side preselected, and
+  focus handed back to the window that had it. `preselect` reaches only the
+  visible workspace, which is why this one cannot be used elsewhere.
+- **Off screen**, it splits the window nearest the pointer, and with dwindle's
+  `smart_split` on, the pointer's place relative to that window's centre picks
+  the side. So `smart_split` is switched on for the moment and the pointer put
+  inside the target on that side, then both go back as they were. Nothing is
+  focused and the workspace you are on does not change.
+
+Hyprland runs a chunk in one pass, so nothing is drawn with the target focused,
+the window floating or the pointer moved. With `cursor:no_warps` off, focusing a
+window warps the pointer to it, and the chunk puts the pointer back either way.
+Floating windows have no split to join, so their tiles keep the boundary drop,
+as do workspaces with a fullscreen window and workspaces using a layout other
+than dwindle, whose splits neither way can steer.
+
+### Where each window sits
+
+While a drag is over a workspace, a blue dot on each of its tiles marks where
+that window is on it, and no other tile shows one: in a corner for a quarter, at
+the middle of an edge for a half — top, bottom, left, right. It is measured
+against the area the workspace's tiled windows cover between them, so gaps and
+the bar drop out. A window whose dot would fall in the centre of the tile gets
+none — one alone on its workspace, or in the middle of both axes — and nor does
+a floating or fullscreen one. The colour is the theme's accent.
 
 ## Terminal icons
 

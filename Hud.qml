@@ -79,6 +79,32 @@ Item {
   // end.
   property int dropSlot: 0
 
+  // Over a tiled window the drop is aimed at that tile instead: the window it
+  // would split, and the side of it the dropped one takes. The tile is cut into
+  // three bands -- the top third puts the window above it, the bottom third
+  // below, and the middle beside it, on whichever half the pointer is over. The
+  // side is kept as a dwindle direction ("u", "d", "l", "r"), so what is drawn
+  // and what is dispatched are the same value. -1 / "" means the pointer is
+  // offering a slot as above -- see _splitTileAt for what falls back to it.
+  property int dropTile: -1
+  property string dropSplit: ""
+  readonly property bool dropSplitReady: root.dropReady && root.dropTile >= 0
+    && root.dropTile < root.wins.length && root.dropSplit !== ""
+
+  // The tile being split, while the drop that split it is in flight.
+  //
+  // Splitting a window on the visible workspace needs it focused for the
+  // length of one eval chunk, and focus is handed back before the chunk ends,
+  // but both changes still reach the focus history below as activewindow
+  // events. Without this the window you came from would read as the split
+  // target, and the next SUPER+TAB would alternate to it.
+  property string splitFocusGuard: ""
+  // The same window of time, for the pointer. A split off screen warps the
+  // pointer into the target and back, and both warps reach this surface as
+  // motion -- which, unheld, is hover, and would move the highlight off the
+  // window that was just dropped. See _splitChunk.
+  property bool splitSettling: false
+
   // Whether letting go here would do anything at all: a live drag, over a
   // group. The workspace is deliberately NOT required to differ -- dropping a
   // tile on its own group is how you send a window to the front or the back of
@@ -1541,6 +1567,7 @@ Item {
   Process { id: focusProc }
   Process { id: moveProc }
   Process { id: placeProc }
+  Process { id: splitProc }
 
 
   // ── Window list ─────────────────────────────────────────────────────────────
@@ -1718,6 +1745,7 @@ Item {
       var t = Hyprland.activeToplevel
       var a = t ? root._addr(t.address) : ""
       if (a === "" || a === root.activeAddr) return
+      if (a === root.splitFocusGuard) return
       root.prevAddr = root.activeAddr
       root.activeAddr = a
     }
@@ -1794,7 +1822,13 @@ Item {
         ws: String((m.workspace && m.workspace.name) || "").trim(),
         wsId: wid,
         x: (m.at && m.at[0]) | 0,
-        y: (m.at && m.at[1]) | 0
+        y: (m.at && m.at[1]) | 0,
+        w: (m.size && m.size[0]) | 0,
+        h: (m.size && m.size[1]) | 0,
+        // Only a tiled window can be split -- see _splitTileAt.
+        floating: m.floating === true,
+        fullscreen: (m.fullscreen | 0) !== 0,
+        pos: ""
       })
     }
 
@@ -1816,7 +1850,12 @@ Item {
         ws: String(w),
         wsId: w,
         x: -1,
-        y: -1
+        y: -1,
+        w: 0,
+        h: 0,
+        floating: false,
+        fullscreen: false,
+        pos: ""
       })
     }
 
@@ -1825,6 +1864,8 @@ Item {
     // not MRU. The focused window is found separately, via `activated`. An
     // empty workspace carries x/y of -1, so it sorts to the head of its own id
     // -- which is the whole workspace, there being nothing else there.
+    root._placePositions(out)
+
     out.sort(function (a, b) {
       if (a.wsId !== b.wsId) return a.wsId - b.wsId
       if (a.x !== b.x) return a.x - b.x
@@ -1912,6 +1953,63 @@ Item {
     if (root.pendingCommit) { root.pendingCommit = false; root.commit() }
   }
 
+  // Where each window sits on its own workspace, for the position dot on its
+  // tile: "<vertical> <horizontal>", from top / middle / bottom / full and
+  // left / center / right / full, or "" for nothing to show.
+  //
+  // Measured against the box the workspace's tiled windows cover between them,
+  // not against the monitor, so gaps, the bar and reserved space drop out on
+  // their own: a window touching that box's left edge and not its right is on
+  // the left, whatever the numbers. One spanning both edges spans that axis --
+  // "top full" is the top half, "full left" the left half -- and one touching
+  // neither is in the middle, a column or row between two others.
+  //
+  // A window whose dot would land in the tile's centre gets nothing: one that
+  // spans or sits in the middle of BOTH axes -- alone on its workspace, a
+  // middle column running the full height, a middle row the full width. The
+  // centre says nothing about where to aim, and it lands on the tile's mark
+  // (2026-10-22, the user's call). Nor do floating and fullscreen windows,
+  // which are not part of the tiling, or empty workspaces.
+  function _placePositions(arr) {
+    var area = ({})
+    for (var i = 0; i < arr.length; i++) {
+      var o = arr[i]
+      if (o.kind !== "window" || o.floating || o.fullscreen || o.w <= 0 || o.h <= 0) continue
+      var b = area[o.wsId]
+      if (!b) { area[o.wsId] = { x0: o.x, y0: o.y, x1: o.x + o.w, y1: o.y + o.h }; continue }
+      b.x0 = Math.min(b.x0, o.x)
+      b.y0 = Math.min(b.y0, o.y)
+      b.x1 = Math.max(b.x1, o.x + o.w)
+      b.y1 = Math.max(b.y1, o.y + o.h)
+    }
+    // Windows that share an edge of the box sit on it exactly; anything off it
+    // is a whole gap away. The slack only absorbs rounding.
+    var tol = 4
+    for (var k = 0; k < arr.length; k++) {
+      var w = arr[k]
+      var box = (w.kind === "window" && !w.floating && !w.fullscreen) ? area[w.wsId] : null
+      if (!box) { w.pos = ""; continue }
+      var l = w.x - box.x0 <= tol
+      var r = box.x1 - (w.x + w.w) <= tol
+      var t = w.y - box.y0 <= tol
+      var bt = box.y1 - (w.y + w.h) <= tol
+      var hz = l && r ? "full" : l ? "left" : r ? "right" : "center"
+      var vt = t && bt ? "full" : t ? "top" : bt ? "bottom" : "middle"
+      var centred = (hz === "full" || hz === "center") && (vt === "full" || vt === "middle")
+      w.pos = centred ? "" : vt + " " + hz
+    }
+  }
+
+  // A position as [x, y] fractions across the tile -- 0 at the left or top
+  // edge, 1 at the right or bottom, a half for a window spanning that axis or
+  // in the middle of it -- or null for no dot.
+  function _posSpot(pos) {
+    if (!pos) return null
+    var p = String(pos).split(" ")
+    return [p[1] === "left" ? 0 : p[1] === "right" ? 1 : 0.5,
+            p[0] === "top" ? 0 : p[0] === "bottom" ? 1 : 0.5]
+  }
+
   function _sameWins(a, b) {
     if (!a || !b || a.length !== b.length) return false
     for (var i = 0; i < a.length; i++) {
@@ -1919,6 +2017,12 @@ Item {
       if (a[i].title !== b[i].title) return false
       if (a[i].cls !== b[i].cls) return false
       if (a[i].ws !== b[i].ws) return false
+      // A float toggle moves nothing in the strip, so without this the model
+      // would keep the old flag and offer (or withhold) a split it should not.
+      if (a[i].floating !== b[i].floating) return false
+      // Nor does a split that leaves the order alone -- two windows side by
+      // side, stacked instead -- and the position dots would go stale.
+      if (a[i].pos !== b[i].pos) return false
     }
     return true
   }
@@ -2089,6 +2193,10 @@ Item {
   // group, or off the card entirely -- nothing happens, which is what a drop on
   // no target normally means.
   //
+  // Over a tiled window, on any workspace, the target is that window instead,
+  // and the drop splits it -- above, beside or below, by the third of the tile
+  // the pointer is in. See _splitTileAt and _splitChunk.
+  //
   // A press that never travels far enough is still a click, and still focuses.
 
   // Which workspace the pointer is offering to drop on.
@@ -2125,6 +2233,46 @@ Item {
     return [first, last]
   }
 
+  // The tile a drop at `lx` would split, or -1 to fall back to the slot walk.
+  //
+  // Any workspace, without switching to it -- the chunk takes a different road
+  // to the same split on a workspace you are not looking at, see _splitChunk.
+  //
+  // The nearest tile centre, the same rule _wsAt uses, so the gap between two
+  // tiles belongs to whichever is closer and there is no dead space. Never the
+  // tile in the hand, nor a floating one, which has no split to join; both fall
+  // back to the slot offer, which is what the strip did before this existed. So
+  // does a workspace with a fullscreen window, and one not laid out by dwindle,
+  // whose splits neither road can steer.
+  function _splitTileAt(lx) {
+    if (root.dropWsId <= 0) return -1
+    var ws = root._workspaceObj(root.dropWsId)
+    if (ws && ws.hasFullscreen) return -1
+    // A snapshot, like every lastIpcObject, and missing until the first
+    // refresh -- the chunk checks again live.
+    var o = ws ? ws.lastIpcObject : null
+    if (o && o.tiledLayout && o.tiledLayout !== "dwindle") return -1
+    var r = root._groupRange(root.dropWsId)
+    var best = -1
+    var bestD = -1
+    for (var i = r[0]; i >= 0 && i <= r[1]; i++) {
+      var d = Math.abs(lx - (root._cellX(i) + card.cellW / 2))
+      if (bestD < 0 || d < bestD) { bestD = d; best = i }
+    }
+    if (best < 0 || best === root.dragIndex) return -1
+    var w = root.wins[best]
+    if (w.kind !== "window" || !w.address || w.floating) return -1
+    return best
+  }
+
+  // Hyprland's workspace object for an id, or null before it has been seen.
+  function _workspaceObj(id) {
+    var vs = Hyprland.workspaces.values
+    for (var i = 0; i < vs.length; i++)
+      if (vs[i].id === id) return vs[i]
+    return null
+  }
+
   function _dragStart(i) {
     root.dragIndex = i
     root.dragging = true
@@ -2153,6 +2301,17 @@ Item {
       }
       root.dropSlot = j
     }
+    // Which band of the tile under the pointer, in thirds of the row.
+    var t = inCard ? root._splitTileAt(lx) : -1
+    root.dropTile = t
+    if (t < 0) {
+      root.dropSplit = ""
+    } else {
+      var ly = cy - list.y
+      root.dropSplit = ly < list.height / 3 ? "u"
+        : ly > list.height * 2 / 3 ? "d"
+        : lx < root._cellX(t) + card.cellW / 2 ? "l" : "r"
+    }
     idleTimer.restart()
   }
 
@@ -2160,6 +2319,8 @@ Item {
     root.dragIndex = -1
     root.dragging = false
     root.dropWsId = -1
+    root.dropTile = -1
+    root.dropSplit = ""
   }
 
   function _dragDrop() {
@@ -2168,8 +2329,12 @@ Item {
     var w = root.wins[i]
     var ws = root.dropWsId
     var slot = root.dropSlot
+    var split = root.dropSplitReady ? root.dropSplit : ""
+    var target = split !== "" ? root.wins[root.dropTile] : null
     root._dragCancel()
     if (w.kind !== "window" || !w.address) return
+
+    if (split !== "") { root._splitDrop(w, target, split); return }
 
     // Slot -> final index. The two differ by one whenever the window is already
     // in this group and is being moved to the RIGHT of where it sits: taking it
@@ -2211,6 +2376,136 @@ Item {
     // restarts this anyway. It only matters if the compositor were to move the
     // window without saying so.
     refreshDebounce.restart()
+  }
+
+  // Split `target` with the window in the hand: above it, below it, or beside
+  // it, as `dir` says. No walk follows -- the chunk puts the window exactly
+  // where it was aimed or not at all -- so this only has to hold the list open
+  // for the result and carry the highlight to it.
+  function _splitDrop(w, target, dir) {
+    root.dropPlacePending = false
+    root.dropFollowAddr = root._addr(w.address)
+    root.splitFocusGuard = root._addr(target.address)
+    root.splitSettling = true
+    splitGuardRelease.restart()
+    dropUnfreeze.restart()
+    splitProc.command = ["hyprctl", "eval", root._splitChunk(w.address, target.address, dir)]
+    splitProc.running = true
+    refreshDebounce.restart()
+  }
+
+  // The split, as one Lua chunk.
+  //
+  // Dwindle has no "open window A against window B" to dispatch. What it has is
+  // the path a window takes INTO the tree (CDwindleAlgorithm::addTarget,
+  // 0.56.2), which picks the window to split and then the axis and side. So
+  // the chunk arranges for that path to pick B and the side asked for, and
+  // sends A through it: floating A takes it out of the tree and tiling it again
+  // puts it back in. That works whether A starts on B's workspace or another,
+  // and takes a window that was floating to begin with into the split too.
+  //
+  // What the path picks depends on whether B's workspace is the one on screen,
+  // so there are two roads, chosen live:
+  //
+  //  - ON SCREEN, it splits the FOCUSED window (use_active_for_splits), on the
+  //    axis and side `preselect` named. So: focus B, preselect, tile A, and
+  //    focus goes back to whatever had it. preselect is a layout message, and
+  //    layout messages reach the focused monitor's active workspace and nothing
+  //    else (CLayoutManager::layoutMsg) -- which is why this road cannot leave
+  //    the screen.
+  //  - OFF SCREEN, the focused window is not on that workspace, so it splits
+  //    the window nearest the POINTER, and with dwindle:smart_split on, the
+  //    pointer's place relative to that window's centre picks the side: the
+  //    triangle it is in, top, bottom, left or right. So: smart_split on, the
+  //    pointer to the middle of B's half on that side, tile A, and both go back
+  //    as they were. Nothing is focused and no workspace changes. hl.config at
+  //    runtime only sets the value and schedules a refresh.
+  //
+  // One chunk rather than a dispatch per step, because Hyprland runs it in a
+  // single pass on its main thread: no frame is drawn with B focused, A
+  // floating or the pointer moved, and no event-socket reader can act in
+  // between. With cursor:no_warps on, focusing B never moves the pointer;
+  // without it Hyprland warps it to B, and either way the tail puts it back.
+  // The pointer warp DOES reach this surface as motion, hence splitSettling.
+  //
+  // Everything after the checks runs under pcall, and the tail runs either way:
+  // a pending preselect would apply to the next window the user opens, a
+  // smart_split left on would steer every split after it, and a step that
+  // failed half way would leave A floating. Focus is only handed back to a
+  // window still on the visible workspace -- focusing one anywhere else would
+  // switch to it, and the window that had focus may be A, now gone elsewhere.
+  //
+  // The checks repeat _splitTileAt's against live state, plus what the strip
+  // cannot see -- either window in a group, A fullscreen, and on screen a
+  // special workspace shown over it (layout messages go to that instead). A
+  // refusal still makes the plain move the slot walk would have started with,
+  // so the window at least reaches the workspace it was dropped on.
+  function _splitChunk(a, b, dir) {
+    var A = '"address:' + a + '"'
+    var B = '"address:' + b + '"'
+    // Half-way into B's half on that side, as a fraction of B from its centre.
+    var fx = dir === "l" ? -0.25 : dir === "r" ? 0.25 : 0
+    var fy = dir === "u" ? -0.25 : dir === "d" ? 0.25 : 0
+    return [
+      'local a, b = hl.get_window(' + A + '), hl.get_window(' + B + ')',
+      'local ws = hl.get_active_workspace()',
+      'if not (a and b and ws and a.workspace and b.workspace) then return end',
+      'local bw = b.workspace',
+      'local here = bw.id == ws.id',
+      'if b.floating or bw.has_fullscreen or a.fullscreen ~= 0 or bw.tiled_layout ~= "dwindle"',
+      '    or a.group or b.group or (here and hl.get_active_special_workspace()) then',
+      '  if a.workspace.id ~= bw.id then',
+      '    hl.dispatch(hl.dsp.window.move({ workspace = tostring(bw.id), window = ' + A + ', follow = false }))',
+      '  end',
+      '  return',
+      'end',
+      'local prev = hl.get_active_window()',
+      'local c0 = hl.get_cursor_pos()',
+      'local smart = hl.get_config("dwindle.smart_split")',
+      'if smart == nil then smart = false end',
+      'local away = a.workspace.id ~= bw.id',
+      'pcall(function ()',
+      '  hl.dispatch(hl.dsp.window.float({ action = "enable", window = ' + A + ' }))',
+      '  if away then',
+      '    hl.dispatch(hl.dsp.window.move({ workspace = tostring(bw.id), window = ' + A + ', follow = false }))',
+      '  end',
+      '  if here then',
+      '    hl.dispatch(hl.dsp.focus({ window = ' + B + ' }))',
+      '    hl.dispatch(hl.dsp.layout("preselect ' + dir + '"))',
+      '  else',
+      '    hl.config({ dwindle = { smart_split = true } })',
+      '    hl.dispatch(hl.dsp.cursor.move({ x = b.at.x + b.size.x * ' + (0.5 + fx) + ',',
+      '      y = b.at.y + b.size.y * ' + (0.5 + fy) + ' }))',
+      '  end',
+      '  hl.dispatch(hl.dsp.window.float({ action = "disable", window = ' + A + ' }))',
+      'end)',
+      'if here then',
+      '  pcall(hl.dispatch, hl.dsp.layout("preselect none"))',
+      'else',
+      '  pcall(hl.config, { dwindle = { smart_split = smart } })',
+      'end',
+      'pcall(hl.dispatch, hl.dsp.window.float({ action = "disable", window = ' + A + ' }))',
+      'local now, aw = hl.get_active_window(), hl.get_active_workspace()',
+      'if prev and now and aw and prev.workspace and now.address ~= prev.address',
+      '    and prev.workspace.id == aw.id then',
+      '  pcall(hl.dispatch, hl.dsp.focus({ window = "address:" .. prev.address }))',
+      'end',
+      'local c1 = hl.get_cursor_pos()',
+      'if c0 and c1 and (c0.x ~= c1.x or c0.y ~= c1.y) then',
+      '  pcall(hl.dispatch, hl.dsp.cursor.move({ x = c0.x, y = c0.y }))',
+      'end'
+    ].join("\n")
+  }
+
+  // Long enough for both activewindow events of a split's focus round trip,
+  // and the motion from its pointer warp, to have arrived -- they are written
+  // during the chunk, which runs in milliseconds -- and short enough that
+  // nothing the user does is ignored for long.
+  Timer {
+    id: splitGuardRelease
+    interval: 600
+    repeat: false
+    onTriggered: { root.splitFocusGuard = ""; root.splitSettling = false }
   }
 
   // Walk the dropped window to the slot it was dropped on, ONE STEP PER REBUILD,
@@ -2319,8 +2614,10 @@ Item {
       var next = Math.max(list.originX, Math.min(max, list.contentX + step))
       if (next === list.contentX) return
       list.contentX = next
-      // The strip moved under a pointer that did not, so the offer changed.
-      root.dropWsId = root._wsAt(lx + list.contentX - list.originX)
+      // The strip moved under a pointer that did not, so the offer changed --
+      // the slot and the tile as well as the workspace, which is why this is
+      // the whole hit-test again rather than _wsAt alone.
+      root._dragTo(lx + list.contentX - list.originX, root.dragX, root.dragY)
     }
   }
 
@@ -3164,6 +3461,42 @@ Item {
                 opacity: 0.52
               }
             }
+
+            // Where the window sits on its workspace: a dot at the matching
+            // corner of the tile, or the middle of an edge for a window that
+            // spans the other axis -- top-left, top, bottom-right and so on.
+            // None for a window filling its workspace alone, a floating or
+            // fullscreen one, or an empty workspace. See _placePositions.
+            //
+            // Only while a drag is over this tile's workspace, and only there:
+            // it is the map you aim a split by, and the rest of the time it is
+            // noise on every tile.
+            //
+            // The accent, which is macOS's blue in these themes (#007AFF): a
+            // marker rather than the selection, and the one colour the theme
+            // keeps for that. Inset by the card's own padding -- as far in from
+            // the tile's edge as the tiles sit from the card's, which keeps it
+            // inside the rounded corner. It was the tile's content padding,
+            // twice that, until the user moved it closer to the edges
+            // (2026-10-22). Declared after the content, so it draws over
+            // anything that reaches that far.
+            Rectangle {
+              id: posDot
+              readonly property var spot: root._posSpot(modelData.pos)
+              readonly property real inset: card.padding
+              visible: posDot.spot !== null && root.dropReady
+                && root.dropWsId === modelData.wsId
+              width: root._snapPx(card.ruleStroke * 2.5)
+              height: posDot.width
+              radius: posDot.width / 2
+              x: posDot.spot
+                ? root._snapPx(posDot.inset + posDot.spot[0] * (cell.width - posDot.inset * 2 - posDot.width))
+                : 0
+              y: posDot.spot
+                ? root._snapPx(posDot.inset + posDot.spot[1] * (cell.height - posDot.inset * 2 - posDot.height))
+                : 0
+              color: Color.accent
+            }
           }
         }
       }
@@ -3274,7 +3607,9 @@ Item {
           id: caret
           // Same weight as a group rule: this is a boundary too.
           readonly property real stroke: Math.max(1, Style.normalBorderWidth) * 3
+          // A split above or below is marked by splitBar instead.
           visible: dropCaret.range[0] >= 0
+            && (!root.dropSplitReady || root.dropSplit === "l" || root.dropSplit === "r")
           width: root._snapPx(caret.stroke)
           // Inset from the row by the card's own padding, top and bottom, so
           // the caret sits within the tiles rather than running their full
@@ -3291,23 +3626,55 @@ Item {
           // a cap on a stroke, not a rounded box, so it follows the stroke.
           radius: caret.width / 2
           x: {
-            var r = dropCaret.range
-            if (r[0] < 0) return -caret.width
-            var m = r[1] - r[0] + 1
-            var j = Math.max(0, Math.min(m, root.dropSlot))
-            // The boundary in front of tile j, or past the last tile when j is
-            // the whole group. Within a group the tiles are one `gap` apart and
-            // nothing else, so half a gap back from a tile's left edge IS the
-            // boundary -- the same arithmetic at both ends and in between.
-            var edge = (j < m)
-              ? root._cellX(r[0] + j) - card.gap / 2
-              : root._cellX(r[1]) + card.cellW + card.gap / 2
+            var edge
+            if (root.dropSplitReady) {
+              // Beside the tile being split, on the side the window will take.
+              // The same boundary arithmetic as a slot, at the edge of the
+              // tile that gives up the room.
+              var t = root.dropTile
+              edge = root.dropSplit === "l"
+                ? root._cellX(t) - card.gap / 2
+                : root._cellX(t) + card.cellW + card.gap / 2
+            } else {
+              var r = dropCaret.range
+              if (r[0] < 0) return -caret.width
+              var m = r[1] - r[0] + 1
+              var j = Math.max(0, Math.min(m, root.dropSlot))
+              // The boundary in front of tile j, or past the last tile when j
+              // is the whole group. Within a group the tiles are one `gap`
+              // apart and nothing else, so half a gap back from a tile's left
+              // edge IS the boundary -- the same arithmetic at both ends and in
+              // between.
+              edge = (j < m)
+                ? root._cellX(r[0] + j) - card.gap / 2
+                : root._cellX(r[1]) + card.cellW + card.gap / 2
+            }
             var vx = edge - (list.contentX - list.originX) - caret.width / 2
             return root._snapPx(Math.max(0, Math.min(list.width - caret.width, vx)))
           }
           // The selection accent, not the group rules' surface step. This marks
           // an active target, and the group highlight underneath it already IS
           // selected-background -- a step off the surface would vanish into it.
+          color: Color.menu.selectedText
+        }
+
+        // The caret turned on its side: a split above or below the tile under
+        // the pointer, along the edge the window will take. It is the only mark
+        // a split gets -- no fill behind it and no rules between the bands --
+        // and its weight is the group rule's, the strip's main separator. It
+        // lies on the tile's own edge rather than in a gap, since there is no
+        // gap above or below a tile to sit in, and runs along the straight part
+        // of that edge, short of the tile's rounded corners.
+        Rectangle {
+          id: splitBar
+          readonly property real inset: card.innerRadius
+          visible: root.dropSplitReady && (root.dropSplit === "u" || root.dropSplit === "d")
+          x: root._snapPx((root.dropTile >= 0 ? root._cellX(root.dropTile) : 0)
+            - (list.contentX - list.originX) + splitBar.inset)
+          width: root._snapPx(Math.max(caret.width, card.cellW - splitBar.inset * 2))
+          height: root._snapPx(card.ruleStroke)
+          y: root.dropSplit === "d" ? parent.height - splitBar.height : 0
+          radius: splitBar.height / 2
           color: Color.menu.selectedText
         }
       }
@@ -3377,6 +3744,7 @@ Item {
           // Plain hover. Deliberately after the drag branches: the highlight
           // belongs to the tile in the hand for the whole of a drag, and must
           // not follow the pointer across the tiles it passes over.
+          if (root.splitSettling) return
           var idx = root._cellAt(tiles.lx(mouse.x))
           if (idx < 0) return
           root.index = idx
@@ -3570,7 +3938,18 @@ Item {
           ? root.wins[root.dragIndex] : null
 
       visible: ghost.win !== null
-      opacity: 0.92
+      // Thinner over a split: the chip is centred on the pointer, and in the
+      // top or bottom third of a 104px tile a 48px chip sits right over the
+      // edge the split bar is drawn on.
+      opacity: root.dropSplitReady ? 0.55 : 0.92
+
+      Behavior on opacity {
+        NumberAnimation {
+          duration: root.animDuration
+          easing.type: Easing.BezierSpline
+          easing.bezierCurve: root.animCurve
+        }
+      }
 
       // The same radius a SUPER+SPACE menu row draws with -- bound to the same
       // token rather than copied as a number. `Menu.qml:1222` is

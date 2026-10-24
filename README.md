@@ -12,8 +12,11 @@ focus it, or drag one onto another workspace to move it there.
   rule between groups. Empty workspaces get a tile of their own, so a blank
   desktop is reachable without a separate keybind.
 - **`SUPER+TAB` alternates**, the way every Alt-Tab does: the first tap lands on
-  the window you came from, further taps in the same gesture walk the strip.
-  The tiles are never reordered to do it.
+  the window or empty workspace you came from, further taps in the same gesture
+  walk the strip. A blank desktop is in the history exactly as a window is, so
+  you can tap from one to a window and back. If the place you came from is gone
+  (a closed window, a workspace that has since got one), the tap goes to the one
+  before it. The tiles are never reordered to do it.
 - **Drag a tile onto a workspace group** to move that window there, landing at
   whichever boundary you drop on — before its first window, after its last, or
   between any two. Dropping on a tile's own group re-arranges it in place.
@@ -119,7 +122,7 @@ same drag works — hold the pointer down on a tile and drop it on a workspace.
 
 ### A pointer resting on the strip
 
-A quick `SUPER+TAB` goes back to the window you came from, wherever the pointer
+A quick `SUPER+TAB` goes back to where you came from, wherever the pointer
 happens to be. Hover only takes the highlight once the pointer has travelled
 more than twice Qt's drag distance (16px; Qt's own menus use the 8px) and no
 sooner than 250ms after a key press (half what GNOME's switcher waits). Motion

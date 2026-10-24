@@ -245,12 +245,27 @@ Item {
   // `activated` only ever says what is focused now, and `lastIpcObject`'s
   // focusHistoryID is a stale snapshot (measured: it sat at 2/1/0 across two
   // focus changes). So the history is kept here, updated from the live
-  // `Hyprland.activeToplevel`.
+  // `Hyprland.activeToplevel` and `Hyprland.focusedWorkspace`.
+  //
+  // It holds TILES, not windows: a window by its address, an empty workspace
+  // by the "ws:N" its tile carries, so a blank desktop is somewhere you came
+  // from exactly as a window is. It used to hold windows only, and could not
+  // even see an empty workspace: Hyprland reports focusing one as an
+  // `activewindowv2` with no address, which Quickshell drops on the failed
+  // parse (connection.cpp, 2b4501a), so activeToplevel and every `activated`
+  // go on naming the window you left. A tap from a blank desktop measured
+  // from that window and went to the one before it. See _hereKey.
+  //
+  // A list rather than the last two, most recent first, because an entry can
+  // stop being on the strip -- a window closed, an empty workspace that got
+  // one, and the passing key a workspace switch records between its two
+  // events (see _hereKey) -- and the tap then goes to the one before it
+  // rather than to whatever sits next to you.
   //
   // Deliberately NOT used for ordering. The tiles stay sorted by workspace and
   // on-screen position; this only moves where the highlight STARTS.
-  property string activeAddr: ""
-  property string prevAddr: ""
+  property var focusHistory: []
+  readonly property int focusHistoryDepth: 8
 
   // "commit" (sent the instant SUPER is released) is the only thing that
   // switches focus. This timer is a last-resort safety net: if that never
@@ -1870,20 +1885,48 @@ Item {
     function onValuesChanged() { root._rebuild(false, true) }
   }
 
-  // Focus history. Only shifts when the focused window actually changes, so
-  // re-focusing the same window does not lose the window before it -- otherwise
+  // Focus history. Only shifts when where you are actually changes, so
+  // re-focusing the same window does not lose the one before it -- otherwise
   // committing to where you already are would erase the thing you wanted to go
-  // back to.
+  // back to. The workspace is watched as well as the window because going to
+  // an empty workspace changes only the workspace.
   Connections {
     target: Hyprland
-    function onActiveToplevelChanged() {
-      var t = Hyprland.activeToplevel
-      var a = t ? root._addr(t.address) : ""
-      if (a === "" || a === root.activeAddr) return
-      if (a === root.splitFocusGuard) return
-      root.prevAddr = root.activeAddr
-      root.activeAddr = a
-    }
+    function onActiveToplevelChanged() { root._noteHere() }
+    function onFocusedWorkspaceChanged() { root._noteHere() }
+  }
+
+  // The history key for where you are: the focused window's address, or
+  // "ws:N" when the window Quickshell calls active is not on the focused
+  // workspace -- which, given what it does with an empty workspace's focus
+  // (see focusHistory), is how being on one reads here.
+  //
+  // By id, which is what the tiles go by, rather than by object: Quickshell's
+  // workspace objects lag a re-arrange, see workspaceResync.
+  //
+  // A switch to a window on another workspace is two events, the workspace
+  // first, and between them this reads "ws:" + the new workspace with the old
+  // window still active. That workspace holds the window being switched to,
+  // so it has no tile, and _mruIndex steps over it.
+  function _hereKey() {
+    var ws = Hyprland.focusedWorkspace
+    var t = Hyprland.activeToplevel
+    if (t && (!ws || !t.workspace || t.workspace.id === ws.id)) return root._addr(t.address)
+    return ws ? "ws:" + ws.id : ""
+  }
+
+  function _noteHere() {
+    // A re-arrange renumbers the workspaces under Quickshell, which catches up
+    // in steps (see workspaceResync), and in between the window and the
+    // workspace can disagree. _wsDragDrop carries the history across itself.
+    if (wsOrderProc.running || workspaceResync.running) return
+    var k = root._hereKey()
+    if (k === "" || k === root.focusHistory[0]) return
+    if (k === root.splitFocusGuard) return
+    var h = [k]
+    for (var i = 0; i < root.focusHistory.length && h.length < root.focusHistoryDepth; i++)
+      if (root.focusHistory[i] !== k) h.push(root.focusHistory[i])
+    root.focusHistory = h
   }
 
   // Hyprland's own addresses carry an 0x prefix in the IPC object but not on
@@ -1973,8 +2016,10 @@ Item {
     //
     // The synthetic "ws:N" address is what lets everything downstream stay as
     // it was: _sameWins still compares addresses and sees a real difference,
-    // _activeIndex and _mruIndex match against live window addresses and simply
-    // never hit one of these, and commit() branches on kind.
+    // the focus history keys a blank desktop by it exactly as it keys a window
+    // by its address, and commit() branches on kind. The history used to match
+    // live window addresses only and never hit one of these, which is what
+    // left a blank desktop out of SUPER+TAB's back-and-forth.
     for (var w = 1; w <= root.emptyWorkspaceSlots; w++) {
       if (occupied[w]) continue
       out.push({
@@ -2165,9 +2210,18 @@ Item {
     return true
   }
 
-  // Index of the window Hyprland currently has focused. `activated` is live, so
-  // this is read at open time rather than baked into the cached list.
+  // Index the strip steps from: the tile for where you are (_hereIndex), else
+  // the window Quickshell calls active, which is live, so this is read at open
+  // time rather than baked into the cached list.
+  //
+  // Where you are has to come first. On an empty workspace `activated` is
+  // still set on the window you left (see focusHistory), and reading that
+  // opened the strip measuring from a window you were no longer on. It is
+  // still the anchor for an empty workspace with no tile (above 5), there
+  // being nothing nearer.
   function _activeIndex() {
+    var here = root._hereIndex()
+    if (here >= 0) return here
     var vs = Hyprland.toplevels.values
     var addr = ""
     for (var i = 0; i < vs.length; i++) {
@@ -2193,12 +2247,24 @@ Item {
     return 0
   }
 
-  // Where the previously focused window sits in the CURRENT positional order,
-  // or -1 if it is gone (closed, or on a workspace being filtered out).
+  // Where the most recent place you came from sits in the CURRENT positional
+  // order: the newest history entry that has a tile and is not where you are,
+  // or -1 if none does. An entry without a tile is skipped rather than ending
+  // the search -- a closed window, an empty workspace that has since got one,
+  // the passing key from a workspace switch (see _hereKey).
+  //
+  // Where you are is _hereIndex, not _activeIndex: on an empty workspace with
+  // no tile the strip steps from the window you left, and that window is the
+  // one to go back to, not one to skip.
   function _mruIndex() {
-    if (root.prevAddr === "") return -1
-    for (var i = 0; i < root.wins.length; i++) {
-      if (root._addr(root.wins[i].address) === root.prevAddr) return i
+    var here = root._hereIndex()
+    var h = root.focusHistory
+    for (var k = 0; k < h.length; k++) {
+      for (var i = 0; i < root.wins.length; i++) {
+        if (root._addr(root.wins[i].address) !== h[k]) continue
+        if (i !== here) return i
+        break
+      }
     }
     return -1
   }
@@ -2212,18 +2278,21 @@ Item {
     root.stayPut = false
     var n = root.wins.length
     if (n < 2) return
+    // Anything the two signals missed: the last window on a workspace closing
+    // changes neither the workspace nor, until a later event, the window.
+    root._noteHere()
     var cur = root._activeIndex()
     var k = step | 0
     var idx
 
     if (k > 0) {
-      // The first forward tap goes to the window you came from, which is what
-      // makes SUPER+TAB alternate. Any further taps in the same gesture then
-      // walk the positional order from there, so the highlight moves along the
-      // strip the way it looks like it should rather than hopping around a
-      // history the tiles do not show.
+      // The first forward tap goes to the window or empty workspace you came
+      // from, which is what makes SUPER+TAB alternate. Any further taps in the
+      // same gesture then walk the positional order from there, so the
+      // highlight moves along the strip the way it looks like it should rather
+      // than hopping around a history the tiles do not show.
       var m = root._mruIndex()
-      idx = (m >= 0 && m !== cur) ? m : (cur + 1) % n
+      idx = m >= 0 ? m : (cur + 1) % n
       idx = (idx + (k - 1)) % n
     } else {
       // SHIFT+TAB stays purely positional: stepping backwards through a history
@@ -2827,13 +2896,15 @@ Item {
   }
 
   // The tile for where you are: the empty workspace on screen if you are on
-  // one, else the focused window. -1 when neither is on the strip.
+  // one, else the focused window. -1 when neither is on the strip -- an empty
+  // workspace above 5 among them, though `activated` still names the window
+  // you left (see _hereKey).
   function _hereIndex() {
     var want = []
     var ws = Hyprland.focusedWorkspace
     if (ws) want.push("ws:" + ws.id)
-    var t = Hyprland.activeToplevel
-    if (t) want.push(root._addr(t.address))
+    var key = root._hereKey()
+    if (key !== "") want.push(key)
     for (var k = 0; k < want.length; k++)
       for (var i = 0; i < root.wins.length; i++)
         if (root._addr(root.wins[i].address) === want[k]) return i
@@ -2910,6 +2981,12 @@ Item {
     root.dropFollowAddr = !sel ? ""
       : sel.kind === "workspace" ? "ws:" + newId[sel.wsId]
       : root._addr(sel.address)
+    // The focus history the same way, or the empty workspace you came from
+    // would be remembered by the number it just gave up.
+    root.focusHistory = root.focusHistory.map(function (key) {
+      var id = key.indexOf("ws:") === 0 ? key.substring(3) : ""
+      return newId[id] !== undefined ? "ws:" + newId[id] : key
+    })
     dropUnfreeze.restart()
 
     wsOrderProc.command = ["hyprctl", "eval", root._wsOrderChunk(moves)]

@@ -112,6 +112,9 @@ Item {
   property bool hoverAnchored: false
   property real hoverAnchorX: 0
   property real hoverAnchorY: 0
+  // How far the pointer travels before hover counts: twice Qt's drag distance,
+  // 16px here (8 at first, doubled on request). See _hoverAt.
+  readonly property real hoverDistance: 2 * Qt.styleHints.startDragDistance
 
   // Whether letting go here would do anything at all: a live drag, over a
   // group. The workspace is deliberately NOT required to differ -- dropping a
@@ -2262,13 +2265,14 @@ Item {
   // Whether a hover at scene point (sx, sy) may take the highlight. Two
   // conditions, each from a shipped switcher or menu with this problem:
   //  - Distance, as Qt's QMenu (QMenuPrivate::hasMouseMoved): the pointer has
-  //    to travel more than Qt.styleHints.startDragDistance (8px here),
-  //    manhattan, from where it was seen. That alone settles a resting pointer.
+  //    to travel more than hoverDistance (16px here, twice the
+  //    Qt.styleHints.startDragDistance QMenu uses), manhattan, from where it
+  //    was seen. That alone settles a resting pointer.
   //  - Time, as GNOME Shell's switcher (_disableHover, DISABLE_HOVER_TIMEOUT):
   //    nothing counts for 250ms after a key press, the opening one included --
   //    half GNOME's 500, which is still longer than a quick tap. A hand on the
-  //    mouse can push it past 8px during one.
-  // Motion inside the hold moves the anchor instead of adding up, so the 8px
+  //    mouse can push it past 16px during one.
+  // Motion inside the hold moves the anchor instead of adding up, so the 16px
   // have to be travelled after it -- a bump during the tap never arms hover
   // later on its own. Once armed it stays armed until the next key press.
   function _hoverAt(sx, sy) {
@@ -2280,7 +2284,7 @@ Item {
       return false
     }
     if (Math.abs(sx - root.hoverAnchorX) + Math.abs(sy - root.hoverAnchorY)
-        <= Qt.styleHints.startDragDistance) return false
+        <= root.hoverDistance) return false
     root.hoverArmed = true
     return true
   }

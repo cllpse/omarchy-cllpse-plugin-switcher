@@ -226,7 +226,7 @@ a floating or fullscreen one. The colour is the theme's accent.
 The workspace under the pointer shows a handle: a small blue pill floating under
 the card, centred on that workspace's tiles. It fades in as the pointer reaches
 a workspace and out as it leaves, as quickly as the strip's own fades but on
-Omarchy's gentler OutCubic curve so that it reads as a fade (58ms), and
+Omarchy's gentler OutCubic curve so that it reads as a fade (60ms), and
 pointing below
 the card counts, so the pointer can travel down from the tiles to it. Carry it
 along the row and let go between two other groups, and that workspace moves

@@ -1,6 +1,6 @@
 # Working on the icons
 
-`icons/` holds 103 marks — app icons and CLI/agent logos, including Ghostty's own.
+`icons/` holds 104 marks — app icons and CLI/agent logos, including Ghostty's own.
 
 **Five are theme-dependent and it is known.** `cups`, `gh` and `jq` are
 near-black and barely register on a dark card; `mise` is near-white and `grok`
@@ -97,8 +97,9 @@ way.
 
 Two guards, and a mark with a background needs both. The full-bleed test catches
 a background reaching the canvas edge. It does *not* catch one with **rounded
-corners** — `hunk`'s box has `rx="2"`, so it reads as 0 min-alpha; the
-99%-coverage test is what stops that one. Never drop one on the grounds that the
+corners** — `hunk`'s box has `rx="2"`, and `herdr-app`'s tile is a
+smoothed-corner path clipping a ram that touches two of its edges, so both
+read as 0 min-alpha; the 99%-coverage test is what stops those. Never drop one on the grounds that the
 other covers it.
 
 A wide wordmark correctly fills its long axis and stays short — that is the
